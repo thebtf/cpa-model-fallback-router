@@ -160,7 +160,9 @@ func cliproxyPluginFree(ptr unsafe.Pointer, _ C.size_t) {
 }
 
 //export cliproxyPluginShutdown
-func cliproxyPluginShutdown() {}
+func cliproxyPluginShutdown() {
+	primaryCooldowns.clear()
+}
 
 func handleMethod(method string, request []byte) ([]byte, error) {
 	switch method {
@@ -196,6 +198,7 @@ func configure(raw []byte) error {
 		return errDecode
 	}
 	currentConfig.Store(cfg)
+	primaryCooldowns.clear()
 	return nil
 }
 

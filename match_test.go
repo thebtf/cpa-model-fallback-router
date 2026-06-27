@@ -33,6 +33,30 @@ rules:
 	}
 }
 
+func TestBuildAttemptPlanSkipsPrimaryDuringCooldown(t *testing.T) {
+	rule := fallbackRule{
+		Name:           "claude_to_gpt",
+		PrimaryModel:   requestedModelToken,
+		FallbackModels: []string{"gpt-5.4", requestedModelToken, "gemini-3-pro"},
+	}
+	plan := buildAttemptPlan(rule, "claude-sonnet-4-5", true)
+	want := []string{"gpt-5.4", "gemini-3-pro"}
+	if plan.Primary != "claude-sonnet-4-5" {
+		t.Fatalf("Primary = %q, want claude-sonnet-4-5", plan.Primary)
+	}
+	if !plan.PrimarySkipped {
+		t.Fatal("PrimarySkipped = false, want true")
+	}
+	if len(plan.Attempts) != len(want) {
+		t.Fatalf("attempts = %#v, want %#v", plan.Attempts, want)
+	}
+	for i := range want {
+		if plan.Attempts[i] != want[i] {
+			t.Fatalf("attempts = %#v, want %#v", plan.Attempts, want)
+		}
+	}
+}
+
 func TestMatchingRuleRejectsSourceMismatch(t *testing.T) {
 	cfg, err := decodeConfig([]byte(`enabled: true
 rules:

@@ -23,6 +23,18 @@ func TestShouldFallbackStatusPolicy(t *testing.T) {
 	if !shouldFallback(0, errors.New("This request would exceed your account's rate limit. Please try again later."), settings) {
 		t.Fatal("shouldFallback(rate limit text) = false, want true")
 	}
+	if !shouldFallback(0, errors.New("auth_unavailable: no auth available"), settings) {
+		t.Fatal("shouldFallback(auth unavailable text) = false, want true")
+	}
+	if !shouldFallback(0, errors.New("auth_not_found: no auth available"), settings) {
+		t.Fatal("shouldFallback(auth not found text) = false, want true")
+	}
+	if !shouldFallback(0, errors.New("model_cooldown: model is cooling down"), settings) {
+		t.Fatal("shouldFallback(model cooldown text) = false, want true")
+	}
+	if !shouldFallback(0, errors.New("account disabled by operator"), settings) {
+		t.Fatal("shouldFallback(disabled account text) = false, want true")
+	}
 	settings.Enabled = false
 	if shouldFallback(429, nil, settings) {
 		t.Fatal("disabled shouldFallback(429) = true, want false")

@@ -58,11 +58,15 @@ func runExecutionFallbackStream(_ context.Context, exec pluginapi.ExecutorReques
 	if !ok {
 		return statusError{status: http.StatusBadGateway, message: "no fallback rule matched executor stream request"}
 	}
-	attempts := buildAttempts(rule, reqModel)
+	policy := fallbackPolicy(cfg, rule)
+	primary := resolveModelToken(rule.PrimaryModel, reqModel)
+	cooldownKey := fallbackCooldownKey(executionSourceFormat(exec), rule, primary)
+	_, primarySkipped := primaryCooldowns.active(cooldownKey)
+	plan := buildAttemptPlan(rule, reqModel, primarySkipped)
+	attempts := plan.Attempts
 	if len(attempts) == 0 {
 		return statusError{status: http.StatusBadGateway, message: "fallback rule produced no stream model attempts"}
 	}
-	policy := fallbackPolicy(cfg, rule)
 
 	var lastErr error
 	for index, model := range attempts {
@@ -75,7 +79,11 @@ func runExecutionFallbackStream(_ context.Context, exec pluginapi.ExecutorReques
 			errForward = statusError{status: status, message: fmt.Sprintf("host model %s stream returned status %d", model, status)}
 		}
 		lastErr = errForward
-		if emitted || index == len(attempts)-1 || !shouldFallback(responseStatus(status, errForward), errForward, policy) {
+		fallbackAllowed := shouldFallback(responseStatus(status, errForward), errForward, policy)
+		if fallbackAllowed && strings.EqualFold(model, plan.Primary) {
+			primaryCooldowns.mark(cooldownKey, fallbackCooldownDuration(policy))
+		}
+		if emitted || index == len(attempts)-1 || !fallbackAllowed {
 			return errForward
 		}
 	}

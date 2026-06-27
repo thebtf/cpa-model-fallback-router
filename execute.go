@@ -25,6 +25,8 @@ func routeModel(raw []byte) ([]byte, error) {
 	})
 }
 
+var executeHostModelAttempt = executeHostModel
+
 func execute(raw []byte) ([]byte, error) {
 	var req rpcExecutorRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
@@ -44,25 +46,33 @@ func runExecutionFallback(exec pluginapi.ExecutorRequest, hostCallbackID string)
 	if !ok {
 		return nil, nil, nil, statusError{status: http.StatusBadGateway, message: "no fallback rule matched executor request"}
 	}
-	attempts := buildAttempts(rule, reqModel)
+	policy := fallbackPolicy(cfg, rule)
+	primary := resolveModelToken(rule.PrimaryModel, reqModel)
+	cooldownKey := fallbackCooldownKey(executionSourceFormat(exec), rule, primary)
+	_, primarySkipped := primaryCooldowns.active(cooldownKey)
+	plan := buildAttemptPlan(rule, reqModel, primarySkipped)
+	attempts := plan.Attempts
 	if len(attempts) == 0 {
 		return nil, nil, nil, statusError{status: http.StatusBadGateway, message: "fallback rule produced no model attempts"}
 	}
-	policy := fallbackPolicy(cfg, rule)
 
 	var lastErr error
 	for index, model := range attempts {
 		body := requestBodyForModel(requestBody(exec), model)
-		resp, errExecute := executeHostModel(exec, hostCallbackID, model, body)
+		resp, errExecute := executeHostModelAttempt(exec, hostCallbackID, model, body)
 		status := responseStatus(resp.StatusCode, errExecute)
 		if errExecute == nil && successStatus(status) {
-			return resp.Body, cloneHeader(resp.Headers), attemptMetadata(rule, attempts, model, index), nil
+			return resp.Body, cloneHeader(resp.Headers), attemptMetadata(rule, attempts, model, index, plan.PrimarySkipped), nil
 		}
 		if errExecute == nil {
 			errExecute = statusError{status: status, message: fmt.Sprintf("host model %s returned status %d", model, status)}
 		}
 		lastErr = errExecute
-		if index == len(attempts)-1 || !shouldFallback(status, errExecute, policy) {
+		fallbackAllowed := shouldFallback(status, errExecute, policy)
+		if fallbackAllowed && strings.EqualFold(model, plan.Primary) {
+			primaryCooldowns.mark(cooldownKey, fallbackCooldownDuration(policy))
+		}
+		if index == len(attempts)-1 || !fallbackAllowed {
 			return nil, nil, nil, errExecute
 		}
 	}
@@ -72,14 +82,18 @@ func runExecutionFallback(exec pluginapi.ExecutorRequest, hostCallbackID string)
 	return nil, nil, nil, statusError{status: http.StatusBadGateway, message: "fallback execution failed"}
 }
 
-func attemptMetadata(rule fallbackRule, attempts []string, selected string, index int) map[string]any {
-	return map[string]any{
+func attemptMetadata(rule fallbackRule, attempts []string, selected string, index int, primarySkipped bool) map[string]any {
+	metadata := map[string]any{
 		"fallback_rule":    rule.Name,
 		"attempts":         append([]string(nil), attempts...),
 		"selected_model":   selected,
-		"fallback_used":    index > 0,
+		"fallback_used":    primarySkipped || index > 0,
 		"selected_attempt": index,
 	}
+	if primarySkipped {
+		metadata["primary_cooldown_skipped"] = true
+	}
+	return metadata
 }
 
 func executionSourceFormat(exec pluginapi.ExecutorRequest) string {

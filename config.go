@@ -12,6 +12,8 @@ import (
 var defaultFallbackOnStatus = []int{401, 403, 408, 409, 429, 500, 502, 503, 504}
 var defaultNoFallbackOnStatus = []int{400, 404, 422}
 
+const defaultFallbackCooldownSeconds = 60
+
 type pluginConfig struct {
 	Enabled  bool             `yaml:"enabled"`
 	Rules    []fallbackRule   `yaml:"rules"`
@@ -26,6 +28,7 @@ type fallbackRule struct {
 	FallbackModels     []string `yaml:"fallback_models"`
 	FallbackOnStatus   []int    `yaml:"fallback_on_status"`
 	NoFallbackOnStatus []int    `yaml:"no_fallback_on_status"`
+	CooldownSeconds    *int     `yaml:"cooldown_seconds"`
 	Order              int      `yaml:"-"`
 }
 
@@ -33,6 +36,7 @@ type fallbackSettings struct {
 	Enabled            bool  `yaml:"enabled"`
 	FallbackOnStatus   []int `yaml:"fallback_on_status"`
 	NoFallbackOnStatus []int `yaml:"no_fallback_on_status"`
+	CooldownSeconds    int   `yaml:"cooldown_seconds"`
 }
 
 func defaultPluginConfig() pluginConfig {
@@ -42,6 +46,7 @@ func defaultPluginConfig() pluginConfig {
 			Enabled:            true,
 			FallbackOnStatus:   append([]int(nil), defaultFallbackOnStatus...),
 			NoFallbackOnStatus: append([]int(nil), defaultNoFallbackOnStatus...),
+			CooldownSeconds:    defaultFallbackCooldownSeconds,
 		},
 	}
 }
@@ -98,6 +103,9 @@ func validateConfig(cfg pluginConfig) error {
 	if err := validateStatusCodes("fallback.no_fallback_on_status", cfg.Fallback.NoFallbackOnStatus); err != nil {
 		return err
 	}
+	if cfg.Fallback.CooldownSeconds < 0 {
+		return fmt.Errorf("fallback.cooldown_seconds must be >= 0")
+	}
 	for i, rule := range cfg.Rules {
 		prefix := fmt.Sprintf("%s rules[%d]", pluginIdentifier, i)
 		if rule.Name == "" {
@@ -114,6 +122,9 @@ func validateConfig(cfg pluginConfig) error {
 		}
 		if err := validateStatusCodes(prefix+".no_fallback_on_status", rule.NoFallbackOnStatus); err != nil {
 			return err
+		}
+		if rule.CooldownSeconds != nil && *rule.CooldownSeconds < 0 {
+			return fmt.Errorf("%s.cooldown_seconds must be >= 0", prefix)
 		}
 	}
 	return nil

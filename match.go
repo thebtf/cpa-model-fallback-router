@@ -27,18 +27,34 @@ func matchingRule(cfg pluginConfig, sourceFormat, requestedModel string) (fallba
 	return fallbackRule{}, false
 }
 
+type attemptPlan struct {
+	Attempts       []string
+	Primary        string
+	PrimarySkipped bool
+}
+
 func buildAttempts(rule fallbackRule, requestedModel string) []string {
+	return buildAttemptPlan(rule, requestedModel, false).Attempts
+}
+
+func buildAttemptPlan(rule fallbackRule, requestedModel string, skipPrimary bool) attemptPlan {
 	requested := strings.TrimSpace(requestedModel)
+	primary := resolveModelToken(rule.PrimaryModel, requested)
 	out := make([]string, 0, 1+len(rule.FallbackModels))
-	if primary := resolveModelToken(rule.PrimaryModel, requested); primary != "" {
+	if primary != "" && !skipPrimary {
 		out = append(out, primary)
 	}
 	for _, model := range rule.FallbackModels {
-		if resolved := resolveModelToken(model, requested); resolved != "" {
-			out = append(out, resolved)
+		resolved := resolveModelToken(model, requested)
+		if resolved == "" {
+			continue
 		}
+		if skipPrimary && strings.EqualFold(resolved, primary) {
+			continue
+		}
+		out = append(out, resolved)
 	}
-	return dedupeStrings(out)
+	return attemptPlan{Attempts: dedupeStrings(out), Primary: primary, PrimarySkipped: skipPrimary && primary != ""}
 }
 
 func resolveModelToken(model, requested string) string {

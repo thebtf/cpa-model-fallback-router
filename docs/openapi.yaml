@@ -40,6 +40,7 @@ paths:
                         fallback_models: [gpt-5.4]
                     fallback:
                       enabled: true
+                      cooldown_seconds: 60
                       fallback_on_status: [401, 403, 408, 409, 429, 500, 502, 503, 504]
                       no_fallback_on_status: [400, 404, 422]
 components:
@@ -98,6 +99,10 @@ components:
           description: Ordered fallback model names to try after fallback-eligible primary failure.
           examples:
             - [gpt-5.4]
+        cooldown_seconds:
+          type: integer
+          minimum: 0
+          description: Optional rule-level override for primary-model cooldown seconds. `0` disables cooldown for this rule.
         fallback_on_status:
           type: array
           items:
@@ -120,6 +125,11 @@ components:
           type: boolean
           default: true
           description: Enables fallback evaluation after a primary failure.
+        cooldown_seconds:
+          type: integer
+          minimum: 0
+          default: 60
+          description: Seconds to skip the primary model after a fallback-eligible primary failure. `0` disables cooldown.
         fallback_on_status:
           type: array
           default: [401, 403, 408, 409, 429, 500, 502, 503, 504]
