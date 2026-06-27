@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to publish or refresh, for example v0.1.0.
+        description: Existing tag to publish or refresh, for example v0.1.1.
         required: true
         type: string
 
@@ -26,31 +26,26 @@ jobs:
             runs_on: ubuntu-24.04
             goos: linux
             goarch: amd64
-            artifact: model-fallback-router-linux-amd64.so
             cc: ""
           - target: linux-arm64
             runs_on: ubuntu-24.04
             goos: linux
             goarch: arm64
-            artifact: model-fallback-router-linux-arm64.so
             cc: aarch64-linux-gnu-gcc
           - target: darwin-amd64
             runs_on: macos-14
             goos: darwin
             goarch: amd64
-            artifact: model-fallback-router-darwin-amd64.dylib
             cc: ""
           - target: darwin-arm64
             runs_on: macos-14
             goos: darwin
             goarch: arm64
-            artifact: model-fallback-router-darwin-arm64.dylib
             cc: ""
           - target: windows-amd64
             runs_on: windows-2022
             goos: windows
             goarch: amd64
-            artifact: model-fallback-router-windows-amd64.dll
             cc: gcc
 
     steps:
@@ -83,23 +78,17 @@ jobs:
         run: |
           "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Test and build shared library
+      - name: Package store-compatible zip
         shell: pwsh
         run: |
-          if ('${{ matrix.cc }}' -ne '') {
-            $env:CC = '${{ matrix.cc }}'
-          }
-          $env:CGO_ENABLED = '1'
-          $env:GOOS = '${{ matrix.goos }}'
-          $env:GOARCH = '${{ matrix.goarch }}'
-          go test ./...
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          go build -trimpath -buildmode=c-shared -ldflags='-s -w' -o "dist/${{ matrix.artifact }}" .
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $version = $tag.TrimStart('v', 'V')
+          ./scripts/package-release.ps1 -Version $version -GOOS '${{ matrix.goos }}' -GOARCH '${{ matrix.goarch }}' -CC '${{ matrix.cc }}'
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: dist/${{ matrix.artifact }}
+          path: dist/*.zip
           if-no-files-found: error
 
   publish:
@@ -119,12 +108,12 @@ jobs:
       - name: Create checksums
         shell: pwsh
         run: |
-          $files = Get-ChildItem -Path release-assets -File | Sort-Object Name
+          $files = Get-ChildItem -Path release-assets -Filter '*.zip' -File | Sort-Object Name
           $lines = foreach ($file in $files) {
             $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($file.Name)"
           }
-          Set-Content -LiteralPath release-assets/SHA256SUMS.txt -Value $lines -Encoding UTF8
+          Set-Content -LiteralPath release-assets/checksums.txt -Value $lines -Encoding UTF8
 
       - name: Create or update GitHub release
         shell: pwsh
@@ -135,13 +124,13 @@ jobs:
           $notes = @"
           Native CPA plugin release for $tag.
 
-          Download the asset for your CPA host platform, then rename it to the CPA plugin basename before installing:
+          This release uses the official CPA plugin store artifact layout:
 
-          - Linux: model-fallback-router.so
-          - macOS: model-fallback-router.dylib
-          - Windows: model-fallback-router.dll
+          - one archive per supported platform: model-fallback-router_<version>_<goos>_<goarch>.zip
+          - one checksums.txt file in sha256sum format
+          - each archive contains exactly one root-level dynamic library named model-fallback-router.so, model-fallback-router.dylib, or model-fallback-router.dll
 
-          Verify downloads with SHA256SUMS.txt.
+          Verify downloads with checksums.txt.
           "@
           Set-Content -LiteralPath release-assets/RELEASE_NOTES.md -Value $notes.Trim() -Encoding UTF8
           $files = Get-ChildItem -Path release-assets -File | Where-Object { $_.Name -ne 'RELEASE_NOTES.md' } | Sort-Object Name | Select-Object -ExpandProperty FullName

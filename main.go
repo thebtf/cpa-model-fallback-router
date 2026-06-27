@@ -68,7 +68,7 @@ import (
 
 const (
 	pluginIdentifier = "model-fallback-router"
-	pluginVersion    = "0.1.0"
+	pluginVersion    = "0.1.1"
 )
 
 var currentConfig atomic.Value
@@ -214,8 +214,8 @@ func pluginRegistration() registration {
 		Metadata: pluginapi.Metadata{
 			Name:             pluginIdentifier,
 			Version:          pluginVersion,
-			Author:           "local",
-			GitHubRepository: "https://github.com/router-for-me/CLIProxyAPI",
+			Author:           "thebtf",
+			GitHubRepository: "https://github.com/thebtf/cpa-model-fallback-router",
 			ConfigFields: []pluginapi.ConfigField{
 				{Name: "enabled", Type: pluginapi.ConfigFieldTypeBoolean, Description: "When false, the router declines every request."},
 				{Name: "rules", Type: pluginapi.ConfigFieldTypeArray, Description: "Ordered fallback rules. Each rule matches source_formats and model patterns."},

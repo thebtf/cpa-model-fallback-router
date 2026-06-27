@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CPA Model Fallback Router
-  version: 0.1.0
+  version: 0.1.1
   summary: Redoc-rendered configuration reference for the CPA model fallback router plugin.
   description: |
     This document is a configuration reference for a native CLIProxyAPI plugin.

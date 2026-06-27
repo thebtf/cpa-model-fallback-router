@@ -1,33 +1,30 @@
 # CPA Model Fallback Router
 
-A CLIProxyAPI plugin that retries a failed model request through fallback model names. It is meant for cases where clients ask for a Claude model but the selected upstream quota expires, and you want CPA to transparently retry with another model such as `gpt-5.4`.
+CPA Model Fallback Router is a native CLIProxyAPI plugin that retries matching model requests with configured fallback model names. It is built for the common quota-exhaustion case where a client requests a Claude model, the primary upstream fails, and CPA should transparently retry with another model such as `gpt-5.4`.
 
-The plugin is intentionally model-name based. It asks CPA to execute the original requested model first, then retries the configured fallback models when the first attempt fails with a fallback-eligible status or transport/quota error.
+The plugin is intentionally model-name based. It asks CPA to execute the original requested model first, then retries configured fallback models when the first attempt fails with a fallback-eligible HTTP status, transport error, quota error, or rate-limit error.
 
-## Compatibility
+## Quick Start
 
-- Built for the CPA native plugin ABI from `github.com/router-for-me/CLIProxyAPI/v7`.
-- Tested during extraction against the CPA v7.2.x plugin API.
-- The current CPA host callback does not expose the selected auth record or auth kind to plugin executors. Because of that, this plugin can scope by requested model and inbound source format, but cannot yet scope a rule to `anthropic oauth` versus an Anthropic API key. Add that only after CPA exposes selected-provider metadata to plugins.
+1. Download the zip for the CPA host platform from the latest GitHub release.
+2. Verify it against `checksums.txt`.
+3. Extract the archive; it contains the correctly named plugin library at the zip root.
+4. Put the extracted library in CPA's configured plugin directory.
+5. Enable the plugin under `plugins.configs.model-fallback-router`.
 
-## Install
-
-1. Enable CPA plugins and mount a persistent plugin directory into the CPA container.
-2. Download the release asset for the CPA host platform.
-3. Rename the asset to the CPA plugin basename for that platform:
-   - Linux: `model-fallback-router.so`
-   - macOS: `model-fallback-router.dylib`
-   - Windows: `model-fallback-router.dll`
-4. Put it in the configured plugin directory.
-5. Add the plugin config under `plugins.configs.model-fallback-router`.
-
-For an official Linux Docker image, the final mounted path usually looks like this inside the container:
+For the official Linux Docker image, the final mounted file commonly looks like this inside the container:
 
 ```text
 /app/plugins/model-fallback-router.so
 ```
 
-## CPA Configuration
+## Compatibility
+
+- Built for the CPA native plugin ABI from `github.com/router-for-me/CLIProxyAPI/v7`.
+- Tested during extraction against the CPA v7.2.x plugin API.
+- Current CPA plugin host callbacks do not expose the selected auth record or auth kind to plugin executors. Because of that, this plugin can scope by requested model and inbound source format, but cannot yet scope a rule to `anthropic oauth` versus an Anthropic API key.
+
+## Configuration
 
 ```yaml
 plugins:
@@ -79,46 +76,68 @@ plugins:
 - Streaming requests fall back only if the failure happens before the first payload chunk is emitted.
 - If CPA loses the numeric HTTP status but the error text clearly indicates rate limiting or quota exhaustion, the plugin treats the failure as fallback eligible.
 
-## Build Locally
+## Commands
 
-Windows PowerShell:
-
-```powershell
-.\scripts\build.ps1 -GOOS windows -GOARCH amd64
-```
-
-Linux/macOS shell:
-
-```bash
-./scripts/build.sh
-```
-
-Direct Go command for the current platform:
+Run tests:
 
 ```bash
 go test ./...
+```
+
+Build a local Windows plugin zip:
+
+```powershell
+.\scripts\package-release.ps1 -Version 0.1.1 -GOOS windows -GOARCH amd64
+```
+
+Build a raw shared library for the current platform:
+
+```bash
 go build -buildmode=c-shared -o dist/model-fallback-router.so .
 ```
 
-Cross-compiling a cgo shared library requires a C compiler for the target platform. The GitHub release workflow handles the supported release targets.
+Cross-compiling a cgo shared library requires a C compiler for the target platform. The GitHub release workflow installs the extra compilers it needs for supported release targets.
+
+## Architecture Overview
+
+CPA loads this plugin as a native c-shared dynamic library. The plugin registers two capabilities:
+
+- `model_router`, which decides whether a request should be routed to the plugin executor.
+- `executor`, which calls CPA's host model executor for the primary model and then for fallback model names when policy allows retry.
+
+The execution flow is:
+
+```mermaid
+flowchart LR
+    Client[Client request] --> CPA[CLIProxyAPI]
+    CPA --> Router[model-fallback-router]
+    Router --> Primary[CPA host execute: requested model]
+    Primary -->|success| CPA
+    Primary -->|fallback-eligible failure| Fallback[CPA host execute: fallback model]
+    Fallback --> CPA
+```
+
+The plugin does not call upstream providers directly. It delegates all model execution back to CPA so existing CPA providers, credentials, protocol translators, logging, and accounting remain in control.
 
 ## Releases
 
-Push a semver tag to build and publish release assets:
+Push an annotated semver tag to build and publish release assets:
 
 ```bash
-git tag v0.1.0
-git push origin main v0.1.0
+git tag -a v0.1.1 -m "Release v0.1.1"
+git push origin main v0.1.1
 ```
 
-The release workflow builds:
+The release workflow builds CPA plugin store compatible assets:
 
-- `model-fallback-router-linux-amd64.so`
-- `model-fallback-router-linux-arm64.so`
-- `model-fallback-router-darwin-amd64.dylib`
-- `model-fallback-router-darwin-arm64.dylib`
-- `model-fallback-router-windows-amd64.dll`
-- `SHA256SUMS.txt`
+- `model-fallback-router_0.1.1_linux_amd64.zip`
+- `model-fallback-router_0.1.1_linux_arm64.zip`
+- `model-fallback-router_0.1.1_darwin_amd64.zip`
+- `model-fallback-router_0.1.1_darwin_arm64.zip`
+- `model-fallback-router_0.1.1_windows_amd64.zip`
+- `checksums.txt`
+
+Each zip contains exactly one root-level dynamic library named for the target platform: `model-fallback-router.so`, `model-fallback-router.dylib`, or `model-fallback-router.dll`.
 
 ## Documentation
 
