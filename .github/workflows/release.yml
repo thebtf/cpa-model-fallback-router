@@ -35,7 +35,7 @@ jobs:
             artifact: model-fallback-router-linux-arm64.so
             cc: aarch64-linux-gnu-gcc
           - target: darwin-amd64
-            runs_on: macos-13
+            runs_on: macos-14
             goos: darwin
             goarch: amd64
             artifact: model-fallback-router-darwin-amd64.dylib
