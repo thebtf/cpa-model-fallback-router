@@ -37,6 +37,9 @@ func fallbackPolicy(cfg pluginConfig, rule fallbackRule) fallbackSettings {
 	if len(rule.NoFallbackOnStatus) > 0 {
 		out.NoFallbackOnStatus = append([]int(nil), rule.NoFallbackOnStatus...)
 	}
+	if rule.CooldownSeconds != nil {
+		out.CooldownSeconds = *rule.CooldownSeconds
+	}
 	return out
 }
 
@@ -50,7 +53,7 @@ func shouldFallback(status int, err error, settings fallbackSettings) bool {
 	if statusInList(status, settings.FallbackOnStatus) {
 		return true
 	}
-	return status == 0 && (isNetworkError(err) || isRateLimitError(err))
+	return status == 0 && (isNetworkError(err) || isRateLimitError(err) || isAuthUnavailableError(err))
 }
 
 func statusInList(status int, list []int) bool {
@@ -133,6 +136,33 @@ func isRateLimitError(err error) bool {
 	}
 	return false
 }
+
+func isAuthUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, token := range []string{
+		"auth_not_found",
+		"auth_unavailable",
+		"model_cooldown",
+		"no auth available",
+		"no active auth",
+		"no available auth",
+		"no active account",
+		"no available account",
+		"account disabled",
+		"auth disabled",
+		"credential disabled",
+		"credentials disabled",
+	} {
+		if strings.Contains(message, token) {
+			return true
+		}
+	}
+	return false
+}
+
 func successStatus(status int) bool {
 	return status >= 200 && status < 300
 }

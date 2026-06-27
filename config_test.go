@@ -38,6 +38,9 @@ fallback:
 	if len(cfg.Fallback.NoFallbackOnStatus) == 0 {
 		t.Fatal("NoFallbackOnStatus did not keep defaults")
 	}
+	if cfg.Fallback.CooldownSeconds != defaultFallbackCooldownSeconds {
+		t.Fatalf("CooldownSeconds = %d, want %d", cfg.Fallback.CooldownSeconds, defaultFallbackCooldownSeconds)
+	}
 }
 
 func TestDecodeConfigDisabledAllowsNoRules(t *testing.T) {
@@ -71,5 +74,78 @@ fallback:
 `))
 	if err == nil || !strings.Contains(err.Error(), "invalid HTTP status") {
 		t.Fatalf("decodeConfig() error = %v, want invalid status", err)
+	}
+}
+
+func TestDecodeConfigCooldownPolicy(t *testing.T) {
+	cfg, err := decodeConfig([]byte(`enabled: true
+rules:
+  - name: claude_quota
+    models:
+      - "claude-*"
+    fallback_models:
+      - gpt-5.4
+fallback:
+  cooldown_seconds: 120
+`))
+	if err != nil {
+		t.Fatalf("decodeConfig() error = %v", err)
+	}
+	if cfg.Fallback.CooldownSeconds != 120 {
+		t.Fatalf("CooldownSeconds = %d, want 120", cfg.Fallback.CooldownSeconds)
+	}
+	policy := fallbackPolicy(cfg, cfg.Rules[0])
+	if policy.CooldownSeconds != 120 {
+		t.Fatalf("fallbackPolicy cooldown = %d, want 120", policy.CooldownSeconds)
+	}
+}
+
+func TestDecodeConfigRuleCooldownOverrideAllowsZero(t *testing.T) {
+	cfg, err := decodeConfig([]byte(`enabled: true
+rules:
+  - name: claude_quota
+    models:
+      - "claude-*"
+    fallback_models:
+      - gpt-5.4
+    cooldown_seconds: 0
+fallback:
+  cooldown_seconds: 120
+`))
+	if err != nil {
+		t.Fatalf("decodeConfig() error = %v", err)
+	}
+	policy := fallbackPolicy(cfg, cfg.Rules[0])
+	if policy.CooldownSeconds != 0 {
+		t.Fatalf("rule cooldown override = %d, want 0", policy.CooldownSeconds)
+	}
+}
+
+func TestDecodeConfigRejectsNegativeCooldown(t *testing.T) {
+	_, err := decodeConfig([]byte(`enabled: true
+rules:
+  - name: bad
+    models:
+      - "claude-*"
+    fallback_models:
+      - gpt-5.4
+fallback:
+  cooldown_seconds: -1
+`))
+	if err == nil || !strings.Contains(err.Error(), "cooldown_seconds") {
+		t.Fatalf("decodeConfig() error = %v, want cooldown error", err)
+	}
+
+	_, err = decodeConfig([]byte(`enabled: true
+rules:
+  - name: bad
+    models:
+      - "claude-*"
+    fallback_models:
+      - gpt-5.4
+    cooldown_seconds: -1
+`))
+	if err == nil || !strings.Contains(err.Error(), "cooldown_seconds") {
+		t.Fatalf("decodeConfig() error = %v, want rule cooldown error", err)
 	}
 }

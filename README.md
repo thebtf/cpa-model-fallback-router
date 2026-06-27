@@ -27,7 +27,8 @@ For the official Linux Docker image, the final mounted file commonly looks like 
 
 - Model-name fallback rules with `*` wildcard matching.
 - Ordered fallback chains, for example Claude requests to `gpt-5.4`.
-- Global or rule-level fallback status policies.
+- Global or rule-level fallback status and cooldown policies.
+- Primary-model cooldown that sends later requests directly to fallback models after a fallback-eligible primary failure.
 - Streaming-safe retry behavior that stops falling back after the first payload chunk is emitted.
 - CPA store compatible release zips plus `checksums.txt`.
 - Redoc-rendered configuration reference in `docs/index.html`.
@@ -62,6 +63,7 @@ plugins:
 
       fallback:
         enabled: true
+        cooldown_seconds: 60
         fallback_on_status:
           - 401
           - 403
@@ -85,10 +87,12 @@ plugins:
 - Omit `source_formats` to make a rule protocol-global.
 - `primary_model` defaults to `$requested`, which means the original requested model.
 - `fallback_models` are tried in order after a fallback-eligible failure.
-- Rule-level `fallback_on_status` and `no_fallback_on_status` override the global fallback status lists for that rule.
+- Rule-level `fallback_on_status`, `no_fallback_on_status`, and `cooldown_seconds` override the global fallback policy for that rule.
+- `cooldown_seconds` defaults to `60`; set it to `0` globally or per rule to disable primary-model cooldown.
+- During cooldown, the plugin skips the primary model and sends the request directly to configured fallback models.
 - Non-streaming requests can fall back after a failed response.
 - Streaming requests fall back only if the failure happens before the first payload chunk is emitted.
-- If CPA loses the numeric HTTP status but the error text clearly indicates rate limiting or quota exhaustion, the plugin treats the failure as fallback eligible.
+- If CPA loses the numeric HTTP status but the error text clearly indicates rate limiting, quota exhaustion, auth unavailability, model cooldown, or an operator-disabled account, the plugin treats the failure as fallback eligible.
 
 ## Commands
 
@@ -137,6 +141,7 @@ The plugin does not call upstream providers directly. It delegates all model exe
 
 - CPA does not list the plugin: confirm `plugins.enabled` is `true`, `plugins.dir` points at the mounted directory, and the library filename is exactly `model-fallback-router.so`, `model-fallback-router.dylib`, or `model-fallback-router.dll` for the host platform.
 - Requests do not fall back: confirm the requested model matches `rules[].models`, the inbound format matches `rules[].source_formats`, and the failure status is not listed in `no_fallback_on_status`.
+- Disabled primary accounts still get called repeatedly: confirm `cooldown_seconds` is greater than `0`; after the first fallback-eligible auth failure, later requests skip the primary model until the cooldown expires.
 - Streaming requests stop after an upstream error: fallback is only possible before the first stream chunk is sent to the client.
 - Provider-specific OAuth scoping is missing: CPA does not currently expose selected auth/provider metadata to plugin executors, so this plugin cannot distinguish Anthropic OAuth from other Anthropic credentials yet.
 
