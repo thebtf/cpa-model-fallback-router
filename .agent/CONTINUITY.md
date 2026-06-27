@@ -9,7 +9,7 @@ The plugin is now a standalone GitHub project.
 
 - Local path: `D:\Dev\cpa-model-fallback-router`
 - GitHub repo: `https://github.com/thebtf/cpa-model-fallback-router`
-- Visibility: private
+- Visibility: public
 - Default branch: `main`
 - Initial source commit: `28d691c Initial standalone CPA model fallback router`
 - Workflow fix commit: `6076b7d ci: use available macOS runner for darwin amd64 release`
@@ -69,7 +69,7 @@ No required next step. Optional future improvements:
 
 1. Add Windows arm64 when a reliable cgo compiler path is confirmed.
 2. Add provider/auth-kind scoping after CPA exposes selected-provider metadata to plugins.
-3. Publish the repository publicly only if the user explicitly wants an open-source release.
+3. Keep public-facing docs and release notes accurate now that the repository is public.
 
 ## Blockers
 
