@@ -105,7 +105,7 @@ go test ./...
 Build a local Windows plugin zip:
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.1.1 -GOOS windows -GOARCH amd64
+.\scripts\package-release.ps1 -Version 0.1.2 -GOOS windows -GOARCH amd64
 ```
 
 Build a raw shared library for the current platform:
@@ -150,17 +150,17 @@ The plugin does not call upstream providers directly. It delegates all model exe
 Push an annotated semver tag to build and publish release assets:
 
 ```bash
-git tag -a v0.1.1 -m "Release v0.1.1"
-git push origin main v0.1.1
+git tag -a v0.1.2 -m "Release v0.1.2"
+git push origin main v0.1.2
 ```
 
 The release workflow builds CPA plugin store compatible assets:
 
-- `model-fallback-router_0.1.1_linux_amd64.zip`
-- `model-fallback-router_0.1.1_linux_arm64.zip`
-- `model-fallback-router_0.1.1_darwin_amd64.zip`
-- `model-fallback-router_0.1.1_darwin_arm64.zip`
-- `model-fallback-router_0.1.1_windows_amd64.zip`
+- `model-fallback-router_0.1.2_linux_amd64.zip`
+- `model-fallback-router_0.1.2_linux_arm64.zip`
+- `model-fallback-router_0.1.2_darwin_amd64.zip`
+- `model-fallback-router_0.1.2_darwin_arm64.zip`
+- `model-fallback-router_0.1.2_windows_amd64.zip`
 - `checksums.txt`
 
 Each zip contains exactly one root-level dynamic library named for the target platform: `model-fallback-router.so`, `model-fallback-router.dylib`, or `model-fallback-router.dll`.

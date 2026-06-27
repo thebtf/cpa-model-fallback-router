@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-28
+
 ### Added
 
 - Add primary-model cooldown with `cooldown_seconds` so fallback-eligible primary failures can temporarily route later requests directly to fallback models.

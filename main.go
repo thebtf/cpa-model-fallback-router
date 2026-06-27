@@ -68,7 +68,7 @@ import (
 
 const (
 	pluginIdentifier = "model-fallback-router"
-	pluginVersion    = "0.1.1"
+	pluginVersion    = "0.1.2"
 )
 
 var currentConfig atomic.Value
