@@ -1,0 +1,22 @@
+# Build output
+/dist/
+/bin/
+/*.so
+/*.dll
+/*.dylib
+/*.h
+*.test
+*.out
+
+# Local editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Agent runtime state
+.agent/CONTINUITY.md
+.agent/session-state/
+
+# Local coding-agent tool state
+.serena/

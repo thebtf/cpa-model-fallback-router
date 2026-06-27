@@ -1,0 +1,153 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish or refresh, for example v0.1.0.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runs_on: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            artifact: model-fallback-router-linux-amd64.so
+            cc: ""
+          - target: linux-arm64
+            runs_on: ubuntu-24.04
+            goos: linux
+            goarch: arm64
+            artifact: model-fallback-router-linux-arm64.so
+            cc: aarch64-linux-gnu-gcc
+          - target: darwin-amd64
+            runs_on: macos-13
+            goos: darwin
+            goarch: amd64
+            artifact: model-fallback-router-darwin-amd64.dylib
+            cc: ""
+          - target: darwin-arm64
+            runs_on: macos-14
+            goos: darwin
+            goarch: arm64
+            artifact: model-fallback-router-darwin-arm64.dylib
+            cc: ""
+          - target: windows-amd64
+            runs_on: windows-2022
+            goos: windows
+            goarch: amd64
+            artifact: model-fallback-router-windows-amd64.dll
+            cc: gcc
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Linux arm64 cross compiler
+        if: matrix.target == 'linux-arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install MinGW for Windows cgo
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Add MinGW to PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Test and build shared library
+        shell: pwsh
+        run: |
+          if ('${{ matrix.cc }}' -ne '') {
+            $env:CC = '${{ matrix.cc }}'
+          }
+          $env:CGO_ENABLED = '1'
+          $env:GOOS = '${{ matrix.goos }}'
+          $env:GOARCH = '${{ matrix.goarch }}'
+          go test ./...
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          go build -trimpath -buildmode=c-shared -ldflags='-s -w' -o "dist/${{ matrix.artifact }}" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path release-assets -File | Sort-Object Name
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          Set-Content -LiteralPath release-assets/SHA256SUMS.txt -Value $lines -Encoding UTF8
+
+      - name: Create or update GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $notes = @"
+          Native CPA plugin release for $tag.
+
+          Download the asset for your CPA host platform, then rename it to the CPA plugin basename before installing:
+
+          - Linux: model-fallback-router.so
+          - macOS: model-fallback-router.dylib
+          - Windows: model-fallback-router.dll
+
+          Verify downloads with SHA256SUMS.txt.
+          "@
+          Set-Content -LiteralPath release-assets/RELEASE_NOTES.md -Value $notes.Trim() -Encoding UTF8
+          $files = Get-ChildItem -Path release-assets -File | Where-Object { $_.Name -ne 'RELEASE_NOTES.md' } | Sort-Object Name | Select-Object -ExpandProperty FullName
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @files --clobber
+          } else {
+            gh release create $tag @files --title $tag --notes-file release-assets/RELEASE_NOTES.md --verify-tag
+          }

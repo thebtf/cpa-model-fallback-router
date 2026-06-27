@@ -1,0 +1,138 @@
+openapi: 3.1.0
+info:
+  title: CPA Model Fallback Router
+  version: 0.1.0
+  summary: Redoc-rendered configuration reference for the CPA model fallback router plugin.
+  description: |
+    This document is a configuration reference for a native CLIProxyAPI plugin.
+    It is rendered with Redoc for readability; the plugin itself does not expose
+    an HTTP API.
+servers:
+  - url: https://example.invalid/config-reference
+    description: Documentation-only placeholder.
+tags:
+  - name: Configuration
+    description: Plugin YAML configuration under `plugins.configs.model-fallback-router`.
+paths:
+  /plugins/configs/model-fallback-router:
+    get:
+      tags: [Configuration]
+      summary: Documentation-only view of the plugin configuration object.
+      description: This path is not a runtime HTTP endpoint. It exists so Redoc can render the configuration schemas and examples.
+      responses:
+        '200':
+          description: Plugin configuration schema.
+          content:
+            application/yaml:
+              schema:
+                $ref: '#/components/schemas/PluginConfig'
+              examples:
+                claudeQuotaToGpt54:
+                  summary: Claude quota fallback to GPT-5.4
+                  value:
+                    enabled: true
+                    priority: 100
+                    rules:
+                      - name: claude_quota_to_gpt54
+                        source_formats: [claude, anthropic]
+                        models: [claude-*]
+                        primary_model: "$requested"
+                        fallback_models: [gpt-5.4]
+                    fallback:
+                      enabled: true
+                      fallback_on_status: [401, 403, 408, 409, 429, 500, 502, 503, 504]
+                      no_fallback_on_status: [400, 404, 422]
+components:
+  schemas:
+    PluginConfig:
+      type: object
+      additionalProperties: false
+      required: [enabled, rules]
+      properties:
+        enabled:
+          type: boolean
+          description: Enables or disables the plugin logic after CPA loads the shared library.
+        priority:
+          type: integer
+          description: CPA plugin execution priority. Higher or lower ordering depends on CPA host ordering rules.
+          default: 100
+        rules:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/FallbackRule'
+        fallback:
+          $ref: '#/components/schemas/FallbackPolicy'
+    FallbackRule:
+      type: object
+      additionalProperties: false
+      required: [name, models, fallback_models]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Stable operator-facing rule name used in diagnostics.
+        source_formats:
+          type: array
+          items:
+            type: string
+            enum: [claude, anthropic, openai, openai-response]
+          description: Optional inbound protocol filter. `anthropic` is normalized to `claude`.
+        models:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Requested model patterns. Supports `*` wildcards.
+          examples:
+            - [claude-*]
+        primary_model:
+          type: string
+          default: "$requested"
+          description: First model to attempt. `$requested` means the model from the client request.
+        fallback_models:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Ordered fallback model names to try after fallback-eligible primary failure.
+          examples:
+            - [gpt-5.4]
+        fallback_on_status:
+          type: array
+          items:
+            type: integer
+            minimum: 100
+            maximum: 599
+          description: Optional rule-level override for fallback-eligible HTTP statuses.
+        no_fallback_on_status:
+          type: array
+          items:
+            type: integer
+            minimum: 100
+            maximum: 599
+          description: Optional rule-level override for statuses that must not fall back.
+    FallbackPolicy:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+          default: true
+          description: Enables fallback evaluation after a primary failure.
+        fallback_on_status:
+          type: array
+          default: [401, 403, 408, 409, 429, 500, 502, 503, 504]
+          items:
+            type: integer
+            minimum: 100
+            maximum: 599
+          description: HTTP statuses that should trigger fallback unless blocked by `no_fallback_on_status`.
+        no_fallback_on_status:
+          type: array
+          default: [400, 404, 422]
+          items:
+            type: integer
+            minimum: 100
+            maximum: 599
+          description: HTTP statuses that should never trigger fallback.
