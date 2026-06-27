@@ -1,13 +1,18 @@
 # CPA Model Fallback Router
 
+[![test](https://github.com/thebtf/cpa-model-fallback-router/actions/workflows/test.yml/badge.svg)](https://github.com/thebtf/cpa-model-fallback-router/actions/workflows/test.yml)
+[![release](https://github.com/thebtf/cpa-model-fallback-router/actions/workflows/release.yml/badge.svg)](https://github.com/thebtf/cpa-model-fallback-router/actions/workflows/release.yml)
+[![latest release](https://img.shields.io/github/v/release/thebtf/cpa-model-fallback-router?label=release)](https://github.com/thebtf/cpa-model-fallback-router/releases/latest)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 CPA Model Fallback Router is a native CLIProxyAPI plugin that retries matching model requests with configured fallback model names. It is built for the common quota-exhaustion case where a client requests a Claude model, the primary upstream fails, and CPA should transparently retry with another model such as `gpt-5.4`.
 
 The plugin is intentionally model-name based. It asks CPA to execute the original requested model first, then retries configured fallback models when the first attempt fails with a fallback-eligible HTTP status, transport error, quota error, or rate-limit error.
 
 ## Quick Start
 
-1. Download the zip for the CPA host platform from the latest GitHub release.
-2. Verify it against `checksums.txt`.
+1. Download the zip for the CPA host platform from the [latest GitHub release](https://github.com/thebtf/cpa-model-fallback-router/releases/latest).
+2. Verify it against the release `checksums.txt`.
 3. Extract the archive; it contains the correctly named plugin library at the zip root.
 4. Put the extracted library in CPA's configured plugin directory.
 5. Enable the plugin under `plugins.configs.model-fallback-router`.
@@ -17,6 +22,15 @@ For the official Linux Docker image, the final mounted file commonly looks like 
 ```text
 /app/plugins/model-fallback-router.so
 ```
+
+## Features
+
+- Model-name fallback rules with `*` wildcard matching.
+- Ordered fallback chains, for example Claude requests to `gpt-5.4`.
+- Global or rule-level fallback status policies.
+- Streaming-safe retry behavior that stops falling back after the first payload chunk is emitted.
+- CPA store compatible release zips plus `checksums.txt`.
+- Redoc-rendered configuration reference in `docs/index.html`.
 
 ## Compatibility
 
@@ -119,6 +133,13 @@ flowchart LR
 
 The plugin does not call upstream providers directly. It delegates all model execution back to CPA so existing CPA providers, credentials, protocol translators, logging, and accounting remain in control.
 
+## Troubleshooting
+
+- CPA does not list the plugin: confirm `plugins.enabled` is `true`, `plugins.dir` points at the mounted directory, and the library filename is exactly `model-fallback-router.so`, `model-fallback-router.dylib`, or `model-fallback-router.dll` for the host platform.
+- Requests do not fall back: confirm the requested model matches `rules[].models`, the inbound format matches `rules[].source_formats`, and the failure status is not listed in `no_fallback_on_status`.
+- Streaming requests stop after an upstream error: fallback is only possible before the first stream chunk is sent to the client.
+- Provider-specific OAuth scoping is missing: CPA does not currently expose selected auth/provider metadata to plugin executors, so this plugin cannot distinguish Anthropic OAuth from other Anthropic credentials yet.
+
 ## Releases
 
 Push an annotated semver tag to build and publish release assets:
@@ -142,3 +163,13 @@ Each zip contains exactly one root-level dynamic library named for the target pl
 ## Documentation
 
 Open `docs/index.html` to view the Redoc-rendered configuration reference. The source spec is `docs/openapi.yaml`.
+
+See also:
+
+- [Changelog](CHANGELOG.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [CPA Plugins Store entry PR](https://github.com/router-for-me/CLIProxyAPI-Plugins-Store/pull/10)
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
