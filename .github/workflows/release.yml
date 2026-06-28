@@ -121,7 +121,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
-          $notes = @"
+          $notesFile = 'RELEASE_NOTES.md'
+          if (-not (Test-Path -LiteralPath $notesFile)) {
+            $notesFile = 'release-assets/RELEASE_NOTES.md'
+            $notes = @"
           Native CPA plugin release for $tag.
 
           This release uses the official CPA plugin store artifact layout:
@@ -132,11 +135,13 @@ jobs:
 
           Verify downloads with checksums.txt.
           "@
-          Set-Content -LiteralPath release-assets/RELEASE_NOTES.md -Value $notes.Trim() -Encoding UTF8
+            Set-Content -LiteralPath $notesFile -Value $notes.Trim() -Encoding UTF8
+          }
           $files = Get-ChildItem -Path release-assets -File | Where-Object { $_.Name -ne 'RELEASE_NOTES.md' } | Sort-Object Name | Select-Object -ExpandProperty FullName
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag @files --clobber
+            gh release edit $tag --title $tag --notes-file $notesFile
           } else {
-            gh release create $tag @files --title $tag --notes-file release-assets/RELEASE_NOTES.md --verify-tag
+            gh release create $tag @files --title $tag --notes-file $notesFile --verify-tag
           }
