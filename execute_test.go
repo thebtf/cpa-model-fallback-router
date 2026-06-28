@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"reflect"
@@ -68,6 +69,41 @@ func TestRunExecutionFallbackSkipsPrimaryDuringCooldown(t *testing.T) {
 	}
 }
 
+func TestRouteModelReturnsExplicitExecutorTarget(t *testing.T) {
+	configureFallbackTest(t, 60)
+	rawReq, errMarshal := json.Marshal(rpcModelRouteRequest{ModelRouteRequest: pluginapi.ModelRouteRequest{
+		SourceFormat:   "claude",
+		RequestedModel: "claude-haiku-4-5-20251001",
+	}})
+	if errMarshal != nil {
+		t.Fatalf("marshal route request: %v", errMarshal)
+	}
+
+	rawResp, errRoute := routeModel(rawReq)
+	if errRoute != nil {
+		t.Fatalf("routeModel() error = %v", errRoute)
+	}
+	var env envelope
+	if errDecode := json.Unmarshal(rawResp, &env); errDecode != nil {
+		t.Fatalf("decode envelope: %v; body=%s", errDecode, rawResp)
+	}
+	if !env.OK {
+		t.Fatalf("routeModel() envelope error = %#v", env.Error)
+	}
+	var resp pluginapi.ModelRouteResponse
+	if errDecode := json.Unmarshal(env.Result, &resp); errDecode != nil {
+		t.Fatalf("decode route response: %v; result=%s", errDecode, env.Result)
+	}
+	if !resp.Handled {
+		t.Fatal("routeModel() Handled = false, want true")
+	}
+	if resp.TargetKind != pluginapi.ModelRouteTargetExecutor {
+		t.Fatalf("TargetKind = %q, want %q", resp.TargetKind, pluginapi.ModelRouteTargetExecutor)
+	}
+	if resp.Target != pluginIdentifier {
+		t.Fatalf("Target = %q, want %q", resp.Target, pluginIdentifier)
+	}
+}
 func configureFallbackTest(t *testing.T, cooldownSeconds int) pluginConfig {
 	t.Helper()
 	originalExec := executeHostModelAttempt

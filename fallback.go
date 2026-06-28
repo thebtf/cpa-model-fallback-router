@@ -53,7 +53,7 @@ func shouldFallback(status int, err error, settings fallbackSettings) bool {
 	if statusInList(status, settings.FallbackOnStatus) {
 		return true
 	}
-	return status == 0 && (isNetworkError(err) || isRateLimitError(err) || isAuthUnavailableError(err))
+	return status == 0 && (isNetworkError(err) || isRateLimitError(err) || isAuthUnavailableError(err) || isModelUnavailableError(err))
 }
 
 func statusInList(status int, list []int) bool {
@@ -163,6 +163,23 @@ func isAuthUnavailableError(err error) bool {
 	return false
 }
 
+func isModelUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, token := range []string{
+		"unknown provider",
+		"no provider for model",
+		"provider unavailable",
+		"model unavailable",
+	} {
+		if strings.Contains(message, token) {
+			return true
+		}
+	}
+	return false
+}
 func successStatus(status int) bool {
 	return status >= 200 && status < 300
 }

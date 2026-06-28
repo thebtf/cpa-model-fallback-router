@@ -20,7 +20,8 @@ func routeModel(raw []byte) ([]byte, error) {
 	}
 	return okEnvelope(pluginapi.ModelRouteResponse{
 		Handled:    true,
-		TargetKind: pluginapi.ModelRouteTargetSelf,
+		TargetKind: pluginapi.ModelRouteTargetExecutor,
+		Target:     pluginIdentifier,
 		Reason:     pluginIdentifier + ":matched",
 	})
 }

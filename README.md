@@ -92,7 +92,7 @@ plugins:
 - During cooldown, the plugin skips the primary model and sends the request directly to configured fallback models.
 - Non-streaming requests can fall back after a failed response.
 - Streaming requests fall back only if the failure happens before the first payload chunk is emitted.
-- If CPA loses the numeric HTTP status but the error text clearly indicates rate limiting, quota exhaustion, auth unavailability, model cooldown, or an operator-disabled account, the plugin treats the failure as fallback eligible.
+- If CPA loses the numeric HTTP status but the error text clearly indicates rate limiting, quota exhaustion, auth unavailability, model cooldown, model/provider unavailability, or an operator-disabled account, the plugin treats the failure as fallback eligible.
 
 ## Commands
 
@@ -105,7 +105,7 @@ go test ./...
 Build a local Windows plugin zip:
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.1.2 -GOOS windows -GOARCH amd64
+.\scripts\package-release.ps1 -Version 0.1.3 -GOOS windows -GOARCH amd64
 ```
 
 Build a raw shared library for the current platform:
@@ -140,7 +140,7 @@ The plugin does not call upstream providers directly. It delegates all model exe
 ## Troubleshooting
 
 - CPA does not list the plugin: confirm `plugins.enabled` is `true`, `plugins.dir` points at the mounted directory, and the library filename is exactly `model-fallback-router.so`, `model-fallback-router.dylib`, or `model-fallback-router.dll` for the host platform.
-- Requests do not fall back: confirm the requested model matches `rules[].models`, the inbound format matches `rules[].source_formats`, and the failure status is not listed in `no_fallback_on_status`.
+- Requests do not fall back: confirm the requested model matches `rules[].models`, the inbound format matches `rules[].source_formats`, and the failure status is not listed in `no_fallback_on_status`. If CPA reports `unknown provider for model ...` after disabling an account, use v0.1.3 or newer.
 - Disabled primary accounts still get called repeatedly: confirm `cooldown_seconds` is greater than `0`; after the first fallback-eligible auth failure, later requests skip the primary model until the cooldown expires.
 - Streaming requests stop after an upstream error: fallback is only possible before the first stream chunk is sent to the client.
 - Provider-specific OAuth scoping is missing: CPA does not currently expose selected auth/provider metadata to plugin executors, so this plugin cannot distinguish Anthropic OAuth from other Anthropic credentials yet.
@@ -150,17 +150,17 @@ The plugin does not call upstream providers directly. It delegates all model exe
 Push an annotated semver tag to build and publish release assets:
 
 ```bash
-git tag -a v0.1.2 -m "Release v0.1.2"
-git push origin main v0.1.2
+git tag -a v0.1.3 -m "Release v0.1.3"
+git push origin main v0.1.3
 ```
 
 The release workflow builds CPA plugin store compatible assets:
 
-- `model-fallback-router_0.1.2_linux_amd64.zip`
-- `model-fallback-router_0.1.2_linux_arm64.zip`
-- `model-fallback-router_0.1.2_darwin_amd64.zip`
-- `model-fallback-router_0.1.2_darwin_arm64.zip`
-- `model-fallback-router_0.1.2_windows_amd64.zip`
+- `model-fallback-router_0.1.3_linux_amd64.zip`
+- `model-fallback-router_0.1.3_linux_arm64.zip`
+- `model-fallback-router_0.1.3_darwin_amd64.zip`
+- `model-fallback-router_0.1.3_darwin_arm64.zip`
+- `model-fallback-router_0.1.3_windows_amd64.zip`
 - `checksums.txt`
 
 Each zip contains exactly one root-level dynamic library named for the target platform: `model-fallback-router.so`, `model-fallback-router.dylib`, or `model-fallback-router.dll`.

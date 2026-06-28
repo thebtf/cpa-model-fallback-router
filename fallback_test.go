@@ -35,6 +35,9 @@ func TestShouldFallbackStatusPolicy(t *testing.T) {
 	if !shouldFallback(0, errors.New("account disabled by operator"), settings) {
 		t.Fatal("shouldFallback(disabled account text) = false, want true")
 	}
+	if !shouldFallback(0, errors.New("host_call_failed: unknown provider for model claude-haiku-4-5-20251001"), settings) {
+		t.Fatal("shouldFallback(unknown provider text) = false, want true")
+	}
 	settings.Enabled = false
 	if shouldFallback(429, nil, settings) {
 		t.Fatal("disabled shouldFallback(429) = true, want false")
