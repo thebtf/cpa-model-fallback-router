@@ -124,10 +124,20 @@ jobs:
           $notesFile = 'RELEASE_NOTES.md'
           if (-not (Test-Path -LiteralPath $notesFile)) {
             $notesFile = 'release-assets/RELEASE_NOTES.md'
-            $notes = @"
+            $version = $tag.TrimStart('v', 'V')
+            $notes = $null
+            if (Test-Path -LiteralPath 'CHANGELOG.md') {
+              $changelog = Get-Content -LiteralPath 'CHANGELOG.md' -Raw
+              $match = [regex]::Match($changelog, "(?ms)^## \[$([regex]::Escape($version))\].*?(?=^## \[|\z)")
+              if ($match.Success) {
+                $notes = "# $tag`n`n" + $match.Value.Trim()
+              }
+            }
+            if ([string]::IsNullOrWhiteSpace($notes)) {
+              $notes = @"
           Native CPA plugin release for $tag.
 
-          This release uses the official CPA plugin store artifact layout:
+          No tag-specific RELEASE_NOTES.md or CHANGELOG.md section was found on this commit. The release assets still use the official CPA plugin store artifact layout:
 
           - one archive per supported platform: model-fallback-router_<version>_<goos>_<goarch>.zip
           - one checksums.txt file in sha256sum format
@@ -135,6 +145,7 @@ jobs:
 
           Verify downloads with checksums.txt.
           "@
+            }
             Set-Content -LiteralPath $notesFile -Value $notes.Trim() -Encoding UTF8
           }
           $files = Get-ChildItem -Path release-assets -File | Where-Object { $_.Name -ne 'RELEASE_NOTES.md' } | Sort-Object Name | Select-Object -ExpandProperty FullName

@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-28
+
+### Fixed
+
+- Fall back when CPA reports `unknown provider for model ...` without a numeric HTTP status, which happens when a matching primary provider/account has been manually disabled or is no longer registered.
+- Return an explicit `model-fallback-router` executor target from `model.route` instead of relying on host-side `self` target normalization.
+
+### Verification
+
+- `go test ./...`
+- Local CPA `internal/pluginhost` acceptance with the rebuilt Windows/amd64 DLL.
+- Docker Linux/amd64 CPA `internal/pluginhost` acceptance with the rebuilt Linux `.so`.
 ## [0.1.2] - 2026-06-28
 
 ### Added
