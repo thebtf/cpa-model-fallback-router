@@ -170,7 +170,6 @@ func isModelUnavailableError(err error) bool {
 	message := strings.ToLower(err.Error())
 	for _, token := range []string{
 		"unknown provider",
-		"unknown provider for model",
 		"no provider for model",
 		"provider unavailable",
 		"model unavailable",
