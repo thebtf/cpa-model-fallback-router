@@ -1,0 +1,26 @@
+{
+  "schema": "nvmd.continuity.domain/1",
+  "domain": "main",
+  "directives": [
+    {
+      "id": "release-current-version",
+      "date": "2026-08-03",
+      "verbatim": "как будто бы можно обновлять документацию, readme, инфо к плагину и релизить текущую версию. она работает уже много дней и работает хорошо. единственно что, неочевидная конфигурация, я попытался настроить fallback для kimi-* моделей сначала на grok-4.5 а потом когда и у него кончится квота на gpt-5.6-luna, но не смог"
+    }
+  ],
+  "position": [
+    "The operator authorized releasing the current execution-transform version after docs, README, and plugin metadata are refreshed.",
+    "The intended Kimi chain is requested model -> grok-4.5 -> gpt-5.6-luna; the focused executor regression passes.",
+    "Run nvmd state and live git before trusting this checkpoint; do not write production CPA config."
+  ],
+  "suspended": [],
+  "next_action": "Update v0.2.0 public docs and version metadata, run release gates, commit, tag, push, and verify GitHub release assets.",
+  "note": null,
+  "rev": 3,
+  "updated_at": "2026-08-02T23:47:27.583Z",
+  "updated_by": {
+    "consumer": "codex",
+    "session_id": "019f1079-6101-7c62-9298-44c375b97e45",
+    "source": "CODEX_THREAD_ID"
+  }
+}
