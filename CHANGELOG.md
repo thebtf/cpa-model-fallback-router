@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-03
+
+### Added
+
+- Add an opt-in execution transform for agent-harness requests routed to non-native or same-model attempts, with tool-surface activation, configurable action-first instructions, required tool choice, privacy-safe telemetry, and an audited `ExitContinuationTool`.
+- Add Claude, OpenAI Chat, and OpenAI Responses request transforms plus non-streaming audited-exit unwrapping for Claude and OpenAI Chat responses.
+- Add a behavioral A/B emulator and a copyable multi-stage `kimi-* -> grok-4.5 -> gpt-5.6-luna` fallback example.
+
+### Changed
+
+- Keep cross-model request and response conversion inside CPA by carrying the mutated request protocol and downstream response protocol through the host executor.
+- Activate execution transforms from the structural tool surface instead of prompt phrases, and bypass post-tool continuation turns.
+- Document first-match-wins rule selection and ordered fallback behavior.
+
+### Fixed
+
+- Continue fallback on recognized context-window `400` errors while keeping other configured terminal `400` responses terminal.
+- Preserve context-window fallback before the first stream payload even when CPA's stream bridge does not retain the numeric status.
+- Keep same-model execution-transform rules usable during primary cooldown instead of producing an empty attempt plan.
+- Unwrap an audited exit only when the plugin injected that attempt's exit tool, leaving operator-defined tools untouched.
+- Include bounded upstream error response text in fallback classification when CPA preserves a status but not the provider error in the callback error.
+
+### Verification
+
+- `go test ./...`
+- Focused three-attempt executor test for `kimi-* -> grok-4.5 -> gpt-5.6-luna` under two `429` responses.
+- Native plugin package and CPA pluginhost smoke tests on the release candidate.
+
 ## [0.1.3] - 2026-06-28
 
 ### Fixed

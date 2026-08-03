@@ -69,9 +69,14 @@ func runExecutionFallbackStream(_ context.Context, exec pluginapi.ExecutorReques
 	}
 
 	var lastErr error
+	bodyInfo := requestBodyInfo(exec)
 	for index, model := range attempts {
-		body := requestBodyForModel(requestBody(exec), model)
-		status, emitted, errForward := forwardHostModelStream(exec, hostCallbackID, model, body, pluginStreamID)
+		body := requestBodyForModel(bodyInfo.Body, model)
+		body, _, _, errTransform := applyExecutionTransform(cfg, exec, rule, model, bodyInfo.EntryProtocol, body)
+		if errTransform != nil {
+			return errTransform
+		}
+		status, emitted, errForward := forwardHostModelStream(exec, hostCallbackID, model, bodyInfo.EntryProtocol, bodyInfo.ResponseProtocol, body, pluginStreamID)
 		if errForward == nil && successStatus(responseStatus(status, nil)) {
 			return nil
 		}
@@ -93,8 +98,8 @@ func runExecutionFallbackStream(_ context.Context, exec pluginapi.ExecutorReques
 	return statusError{status: http.StatusBadGateway, message: "fallback stream execution failed"}
 }
 
-func forwardHostModelStream(exec pluginapi.ExecutorRequest, hostCallbackID, model string, body []byte, pluginStreamID string) (int, bool, error) {
-	resp, errStart := startHostModelStream(exec, hostCallbackID, model, body)
+func forwardHostModelStream(exec pluginapi.ExecutorRequest, hostCallbackID, model, entryProtocol, responseProtocol string, body []byte, pluginStreamID string) (int, bool, error) {
+	resp, errStart := startHostModelStream(exec, hostCallbackID, model, entryProtocol, responseProtocol, body)
 	if errStart != nil {
 		return responseStatus(0, errStart), false, errStart
 	}

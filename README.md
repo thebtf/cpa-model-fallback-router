@@ -26,10 +26,11 @@ For the official Linux Docker image, the final mounted file commonly looks like 
 ## Features
 
 - Model-name fallback rules with `*` wildcard matching.
-- Ordered fallback chains, for example Claude requests to `gpt-5.4`.
+- Ordered fallback chains across any CPA-supported models.
 - Global or rule-level fallback status and cooldown policies.
 - Primary-model cooldown that sends later requests directly to fallback models after a fallback-eligible primary failure.
 - Streaming-safe retry behavior that stops falling back after the first payload chunk is emitted.
+- Optional disabled-by-default Claude Code execution transform for GPT fallback attempts.
 - CPA store compatible release zips plus `checksums.txt`.
 - Redoc-rendered configuration reference in `docs/index.html`.
 
@@ -60,6 +61,22 @@ plugins:
           primary_model: "$requested"
           fallback_models:
             - gpt-5.4
+          execution_transform:
+            enabled: true
+            activation: tool_surface
+            force_tools: when_available
+            selected_model_patterns:
+              - gpt-*
+
+      execution_transform:
+        enabled: false
+        telemetry: true
+        activation: tool_surface
+        force_tools: when_available
+        execution_envelope: >-
+          Execution mode is active for an agent harness turn routed to GPT.
+          Execute a real state-changing tool call before prose; do not stop at
+          "next step" or "currently doing" narration.
 
       fallback:
         enabled: true
@@ -83,16 +100,64 @@ plugins:
 ## Configuration Rules
 
 - `rules[].models` matches the client-requested model with `*` wildcards.
+- Rules are first-match-wins. Put narrow model patterns before broader patterns such as `*`.
+- Unknown YAML keys are ignored for CPA and legacy-config compatibility, so copy documented field names exactly.
 - `rules[].source_formats` optionally limits the inbound protocol. `anthropic` is normalized to `claude`.
 - Omit `source_formats` to make a rule protocol-global.
 - `primary_model` defaults to `$requested`, which means the original requested model.
-- `fallback_models` are tried in order after a fallback-eligible failure.
+- `fallback_models` are tried in order. Every attempt must fail with a fallback-eligible status or error before the next model is tried.
 - Rule-level `fallback_on_status`, `no_fallback_on_status`, and `cooldown_seconds` override the global fallback policy for that rule.
 - `cooldown_seconds` defaults to `60`; set it to `0` globally or per rule to disable primary-model cooldown.
 - During cooldown, the plugin skips the primary model and sends the request directly to configured fallback models.
 - Non-streaming requests can fall back after a failed response.
 - Streaming requests fall back only if the failure happens before the first payload chunk is emitted.
 - If CPA loses the numeric HTTP status but the error text clearly indicates rate limiting, quota exhaustion, auth unavailability, model cooldown, model/provider unavailability, or an operator-disabled account, the plugin treats the failure as fallback eligible.
+- `execution_transform` is disabled by default. Configure it globally, then enable it narrowly per rule for the harness routes that should enforce action-or-audited-exit behavior.
+- `activation` controls when a matched rule becomes an execution turn. Use `tool_surface` for normal harness traffic: after source/model rule matching, transform only requests that expose tools, without matching prompt phrases. Use `always` only for tightly scoped rules where every matched request is intentionally an execution turn.
+- The transform injects a configurable execution envelope, can add `ExitContinuationTool`, and can set required tool choice for supported Claude/OpenAI JSON shapes.
+- Structural post-tool continuation turns are bypassed before mutation, so `tool_surface` does not keep forcing another tool call after a Claude `tool_result` or OpenAI tool/function output.
+- Cross-model routing keeps conversion inside CPA: the plugin sends the host executor the body protocol it is mutating as `EntryProtocol` and the downstream client protocol as `ExitProtocol`, so CPA's built-in translators handle Claude/OpenAI/Gemini/Codex request and response shapes.
+- `execution_envelope` is intentionally operator-editable. Tune it when a fallback model says what it will do instead of making the tool call or state update in the current turn.
+- Transform metadata intentionally excludes raw prompts, raw request bodies, and full tool schemas.
+- Streaming requests receive only the request transform before stream start; audited exit response unwrapping is non-streaming only in this version.
+
+### Multi-stage fallback chain
+
+This rule sends `kimi-k3` to the requested model first, then to `grok-4.5`, and finally to `gpt-5.6-luna` when each preceding attempt fails with a fallback-eligible error:
+
+```yaml
+rules:
+  - name: kimi_to_grok_then_luna
+    models: ["kimi-*"]
+    primary_model: "$requested"
+    fallback_models:
+      - grok-4.5
+      - gpt-5.6-luna
+```
+
+The omitted `source_formats` makes the rule apply to every inbound protocol. Put it before any broader rule that can also match `kimi-*`. Quota status `429` advances the chain by default; terminal statuses such as `400`, `404`, and `422` do not, except a recognized context-window `400`.
+
+### Same-model execution transform for direct GPT traffic
+
+For OMP or another harness that already calls GPT directly through OpenAI Responses, configure a same-model rule instead of a failure fallback rule:
+
+```yaml
+rules:
+  - name: omp_gpt_responses_execution
+    source_formats: [openai-response]
+    models: ["gpt-5.5"]
+    primary_model: "$requested"
+    fallback_models: ["$requested"]
+    execution_transform:
+      enabled: true
+      activation: tool_surface
+      force_tools: when_available
+      source_formats: [openai-response]
+      requested_model_patterns: ["gpt-*"]
+      selected_model_patterns: ["gpt-*"]
+```
+
+This routes matching direct GPT requests through the plugin once, keeps the selected model unchanged, and lets the transform apply when the request exposes tools. No prompt matching is required in the recommended `tool_surface` mode.
 
 ## Commands
 
@@ -105,7 +170,7 @@ go test ./...
 Build a local Windows plugin zip:
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.1.3 -GOOS windows -GOARCH amd64
+.\scripts\package-release.ps1 -Version <version> -GOOS windows -GOARCH amd64
 ```
 
 Build a raw shared library for the current platform:
@@ -141,6 +206,8 @@ The plugin does not call upstream providers directly. It delegates all model exe
 
 - CPA does not list the plugin: confirm `plugins.enabled` is `true`, `plugins.dir` points at the mounted directory, and the library filename is exactly `model-fallback-router.so`, `model-fallback-router.dylib`, or `model-fallback-router.dll` for the host platform.
 - Requests do not fall back: confirm the requested model matches `rules[].models`, the inbound format matches `rules[].source_formats`, and the failure status is not listed in `no_fallback_on_status`. If CPA reports `unknown provider for model ...` after disabling an account, use v0.1.3 or newer.
+- The wrong fallback rule runs: rules are first-match-wins, so move the narrow rule above broader model patterns.
+- Only the first fallback is tried: confirm that fallback's own failure is fallback eligible. Statuses `400`, `404`, and `422` stop the chain by default.
 - Disabled primary accounts still get called repeatedly: confirm `cooldown_seconds` is greater than `0`; after the first fallback-eligible auth failure, later requests skip the primary model until the cooldown expires.
 - Streaming requests stop after an upstream error: fallback is only possible before the first stream chunk is sent to the client.
 - Provider-specific OAuth scoping is missing: CPA does not currently expose selected auth/provider metadata to plugin executors, so this plugin cannot distinguish Anthropic OAuth from other Anthropic credentials yet.
@@ -150,17 +217,17 @@ The plugin does not call upstream providers directly. It delegates all model exe
 Push an annotated semver tag to build and publish release assets:
 
 ```bash
-git tag -a v0.1.3 -m "Release v0.1.3"
-git push origin main v0.1.3
+git tag -a v<version> -m "Release v<version>"
+git push origin main v<version>
 ```
 
 The release workflow builds CPA plugin store compatible assets:
 
-- `model-fallback-router_0.1.3_linux_amd64.zip`
-- `model-fallback-router_0.1.3_linux_arm64.zip`
-- `model-fallback-router_0.1.3_darwin_amd64.zip`
-- `model-fallback-router_0.1.3_darwin_arm64.zip`
-- `model-fallback-router_0.1.3_windows_amd64.zip`
+- `model-fallback-router_<version>_linux_amd64.zip`
+- `model-fallback-router_<version>_linux_arm64.zip`
+- `model-fallback-router_<version>_darwin_amd64.zip`
+- `model-fallback-router_<version>_darwin_arm64.zip`
+- `model-fallback-router_<version>_windows_amd64.zip`
 - `checksums.txt`
 
 Each zip contains exactly one root-level dynamic library named for the target platform: `model-fallback-router.so`, `model-fallback-router.dylib`, or `model-fallback-router.dll`.

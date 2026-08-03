@@ -17,6 +17,18 @@ func TestShouldFallbackStatusPolicy(t *testing.T) {
 	if shouldFallback(400, nil, settings) {
 		t.Fatal("shouldFallback(400) = true, want false")
 	}
+	if !shouldFallback(400, errors.New("prompt is too long: 1035602 tokens > 1000000 maximum"), settings) {
+		t.Fatal("shouldFallback(context window 400) = false, want true")
+	}
+	if !shouldFallback(400, errors.New("context_length_exceeded: maximum context length reached"), settings) {
+		t.Fatal("shouldFallback(context_length_exceeded 400) = false, want true")
+	}
+	if !shouldFallback(0, errors.New("context_length_exceeded: maximum context length reached"), settings) {
+		t.Fatal("shouldFallback(context_length_exceeded without preserved status) = false, want true")
+	}
+	if shouldFallback(400, errors.New("invalid request: missing required field"), settings) {
+		t.Fatal("shouldFallback(generic 400) = true, want false")
+	}
 	if !shouldFallback(0, errors.New("connection reset by peer"), settings) {
 		t.Fatal("shouldFallback(network error) = false, want true")
 	}

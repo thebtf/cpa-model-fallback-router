@@ -19,7 +19,7 @@ go test ./...
 For release packaging changes, also run at least one local package smoke:
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.1.1 -GOOS windows -GOARCH amd64
+.\scripts\package-release.ps1 -Version <version> -GOOS windows -GOARCH amd64
 ```
 
 ## Release Asset Contract

@@ -40,21 +40,31 @@ func buildAttempts(rule fallbackRule, requestedModel string) []string {
 func buildAttemptPlan(rule fallbackRule, requestedModel string, skipPrimary bool) attemptPlan {
 	requested := strings.TrimSpace(requestedModel)
 	primary := resolveModelToken(rule.PrimaryModel, requested)
-	out := make([]string, 0, 1+len(rule.FallbackModels))
-	if primary != "" && !skipPrimary {
-		out = append(out, primary)
-	}
+	fallbacks := make([]string, 0, len(rule.FallbackModels))
+	hasDistinctFallback := false
 	for _, model := range rule.FallbackModels {
 		resolved := resolveModelToken(model, requested)
 		if resolved == "" {
 			continue
 		}
-		if skipPrimary && strings.EqualFold(resolved, primary) {
+		fallbacks = append(fallbacks, resolved)
+		if primary == "" || !strings.EqualFold(resolved, primary) {
+			hasDistinctFallback = true
+		}
+	}
+
+	effectiveSkipPrimary := skipPrimary && primary != "" && hasDistinctFallback
+	out := make([]string, 0, 1+len(fallbacks))
+	if primary != "" && !effectiveSkipPrimary {
+		out = append(out, primary)
+	}
+	for _, resolved := range fallbacks {
+		if effectiveSkipPrimary && strings.EqualFold(resolved, primary) {
 			continue
 		}
 		out = append(out, resolved)
 	}
-	return attemptPlan{Attempts: dedupeStrings(out), Primary: primary, PrimarySkipped: skipPrimary && primary != ""}
+	return attemptPlan{Attempts: dedupeStrings(out), Primary: primary, PrimarySkipped: effectiveSkipPrimary}
 }
 
 func resolveModelToken(model, requested string) string {

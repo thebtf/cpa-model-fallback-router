@@ -58,15 +58,30 @@ func runExecutionFallback(exec pluginapi.ExecutorRequest, hostCallbackID string)
 	}
 
 	var lastErr error
+	bodyInfo := requestBodyInfo(exec)
 	for index, model := range attempts {
-		body := requestBodyForModel(requestBody(exec), model)
-		resp, errExecute := executeHostModelAttempt(exec, hostCallbackID, model, body)
+		body := requestBodyForModel(bodyInfo.Body, model)
+		body, transformMetadata, unwrapAuditedExit, errTransform := applyExecutionTransform(cfg, exec, rule, model, bodyInfo.EntryProtocol, body)
+		if errTransform != nil {
+			return nil, nil, transformMetadata, errTransform
+		}
+		resp, errExecute := executeHostModelAttempt(exec, hostCallbackID, model, bodyInfo.EntryProtocol, bodyInfo.ResponseProtocol, body)
 		status := responseStatus(resp.StatusCode, errExecute)
 		if errExecute == nil && successStatus(status) {
-			return resp.Body, cloneHeader(resp.Headers), attemptMetadata(rule, attempts, model, index, plan.PrimarySkipped), nil
+			metadata := attemptMetadata(rule, attempts, model, index, plan.PrimarySkipped)
+			mergeMetadata(metadata, transformMetadata)
+			payload := resp.Body
+			if unwrapAuditedExit {
+				unwrapped, exitMetadata, okUnwrap := unwrapAuditedExitResponse(resolveExecutionTransform(cfg, rule), bodyInfo.ResponseProtocol, resp.Body)
+				mergeMetadata(metadata, exitMetadata)
+				if okUnwrap {
+					payload = unwrapped
+				}
+			}
+			return payload, cloneHeader(resp.Headers), metadata, nil
 		}
 		if errExecute == nil {
-			errExecute = statusError{status: status, message: fmt.Sprintf("host model %s returned status %d", model, status)}
+			errExecute = hostModelStatusError(model, status, resp.Body)
 		}
 		lastErr = errExecute
 		fallbackAllowed := shouldFallback(status, errExecute, policy)
@@ -83,6 +98,25 @@ func runExecutionFallback(exec pluginapi.ExecutorRequest, hostCallbackID string)
 	return nil, nil, nil, statusError{status: http.StatusBadGateway, message: "fallback execution failed"}
 }
 
+func hostModelStatusError(model string, status int, body []byte) error {
+	message := fmt.Sprintf("host model %s returned status %d", model, status)
+	if summary := hostModelErrorSummary(body); summary != "" {
+		message += ": " + summary
+	}
+	return statusError{status: status, message: message}
+}
+
+func hostModelErrorSummary(body []byte) string {
+	summary := strings.TrimSpace(string(body))
+	if summary == "" {
+		return ""
+	}
+	if len(summary) > 512 {
+		summary = summary[:512]
+	}
+	return summary
+}
+
 func attemptMetadata(rule fallbackRule, attempts []string, selected string, index int, primarySkipped bool) map[string]any {
 	metadata := map[string]any{
 		"fallback_rule":    rule.Name,
@@ -95,6 +129,15 @@ func attemptMetadata(rule fallbackRule, attempts []string, selected string, inde
 		metadata["primary_cooldown_skipped"] = true
 	}
 	return metadata
+}
+
+func mergeMetadata(dst map[string]any, src map[string]any) {
+	if dst == nil || src == nil {
+		return
+	}
+	for key, value := range src {
+		dst[key] = value
+	}
 }
 
 func executionSourceFormat(exec pluginapi.ExecutorRequest) string {

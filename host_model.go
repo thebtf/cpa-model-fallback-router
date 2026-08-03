@@ -25,19 +25,10 @@ type rpcStreamCloseRequest struct {
 	Error    string `json:"error,omitempty"`
 }
 
-func executeHostModel(exec pluginapi.ExecutorRequest, hostCallbackID, model string, body []byte) (pluginapi.HostModelExecutionResponse, error) {
+func executeHostModel(exec pluginapi.ExecutorRequest, hostCallbackID, model, entryProtocol, responseProtocol string, body []byte) (pluginapi.HostModelExecutionResponse, error) {
 	result, errCall := callHost(pluginabi.MethodHostModelExecute, hostModelExecutionRequest{
-		HostModelExecutionRequest: pluginapi.HostModelExecutionRequest{
-			EntryProtocol: hostProtocol(exec),
-			ExitProtocol:  hostProtocol(exec),
-			Model:         model,
-			Stream:        false,
-			Body:          body,
-			Headers:       cloneHeader(exec.Headers),
-			Query:         cloneValues(exec.Query),
-			Alt:           exec.Alt,
-		},
-		HostCallbackID: hostCallbackID,
+		HostModelExecutionRequest: hostModelExecutionPayload(exec, model, entryProtocol, responseProtocol, false, body),
+		HostCallbackID:            hostCallbackID,
 	})
 	if errCall != nil {
 		return pluginapi.HostModelExecutionResponse{}, errCall
@@ -49,19 +40,10 @@ func executeHostModel(exec pluginapi.ExecutorRequest, hostCallbackID, model stri
 	return resp, nil
 }
 
-func startHostModelStream(exec pluginapi.ExecutorRequest, hostCallbackID, model string, body []byte) (pluginapi.HostModelStreamResponse, error) {
+func startHostModelStream(exec pluginapi.ExecutorRequest, hostCallbackID, model, entryProtocol, responseProtocol string, body []byte) (pluginapi.HostModelStreamResponse, error) {
 	result, errCall := callHost(pluginabi.MethodHostModelExecuteStream, hostModelExecutionRequest{
-		HostModelExecutionRequest: pluginapi.HostModelExecutionRequest{
-			EntryProtocol: hostProtocol(exec),
-			ExitProtocol:  hostProtocol(exec),
-			Model:         model,
-			Stream:        true,
-			Body:          body,
-			Headers:       cloneHeader(exec.Headers),
-			Query:         cloneValues(exec.Query),
-			Alt:           exec.Alt,
-		},
-		HostCallbackID: hostCallbackID,
+		HostModelExecutionRequest: hostModelExecutionPayload(exec, model, entryProtocol, responseProtocol, true, body),
+		HostCallbackID:            hostCallbackID,
 	})
 	if errCall != nil {
 		return pluginapi.HostModelStreamResponse{}, errCall
@@ -71,6 +53,27 @@ func startHostModelStream(exec pluginapi.ExecutorRequest, hostCallbackID, model 
 		return pluginapi.HostModelStreamResponse{}, fmt.Errorf("decode host.model.execute_stream result: %w", errUnmarshal)
 	}
 	return resp, nil
+}
+
+func hostModelExecutionPayload(exec pluginapi.ExecutorRequest, model, entryProtocol, responseProtocol string, stream bool, body []byte) pluginapi.HostModelExecutionRequest {
+	entryProtocol = normalizeProtocol(entryProtocol)
+	responseProtocol = normalizeProtocol(responseProtocol)
+	if entryProtocol == "" {
+		entryProtocol = hostProtocol(exec)
+	}
+	if responseProtocol == "" {
+		responseProtocol = entryProtocol
+	}
+	return pluginapi.HostModelExecutionRequest{
+		EntryProtocol: entryProtocol,
+		ExitProtocol:  responseProtocol,
+		Model:         model,
+		Stream:        stream,
+		Body:          body,
+		Headers:       cloneHeader(exec.Headers),
+		Query:         cloneValues(exec.Query),
+		Alt:           exec.Alt,
+	}
 }
 
 func readHostModelStream(streamID string) (pluginapi.HostModelStreamReadResponse, error) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -46,6 +47,9 @@ func fallbackPolicy(cfg pluginConfig, rule fallbackRule) fallbackSettings {
 func shouldFallback(status int, err error, settings fallbackSettings) bool {
 	if !settings.Enabled {
 		return false
+	}
+	if (status == 0 || status == http.StatusBadRequest) && isContextWindowError(err) {
+		return true
 	}
 	if statusInList(status, settings.NoFallbackOnStatus) {
 		return false
@@ -180,6 +184,27 @@ func isModelUnavailableError(err error) bool {
 	}
 	return false
 }
+
+func isContextWindowError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "prompt is too long") {
+		return true
+	}
+	if strings.Contains(message, "context_length_exceeded") {
+		return true
+	}
+	if strings.Contains(message, "maximum context") || strings.Contains(message, "context window") {
+		return true
+	}
+	if strings.Contains(message, "context length") && (strings.Contains(message, "exceed") || strings.Contains(message, "too long")) {
+		return true
+	}
+	return strings.Contains(message, "tokens >") && strings.Contains(message, "maximum")
+}
+
 func successStatus(status int) bool {
 	return status >= 200 && status < 300
 }

@@ -149,3 +149,102 @@ rules:
 		t.Fatalf("decodeConfig() error = %v, want rule cooldown error", err)
 	}
 }
+
+func TestDecodeConfigExecutionTransform(t *testing.T) {
+	cfg, err := decodeConfig([]byte(`enabled: true
+execution_transform:
+  enabled: false
+  telemetry: true
+  activation: tool_surface
+  force_tools: never
+  execution_envelope: "Execution mode is active. Custom execution envelope for OMP handoff loops."
+  max_envelope_chars: 512
+  source_formats: [anthropic]
+  requested_model_patterns: ["claude-*"]
+  selected_model_patterns: ["gpt-*"]
+  exit_tool:
+    name: ExitContinuationTool
+rules:
+  - name: claude_code
+    source_formats: [claude]
+    models: ["claude-*"]
+    fallback_models: [gpt-5.5]
+    execution_transform:
+      enabled: true
+      force_tools: when_available
+fallback:
+  cooldown_seconds: 60
+`))
+	if err != nil {
+		t.Fatalf("decodeConfig() error = %v", err)
+	}
+	settings := resolveExecutionTransform(cfg, cfg.Rules[0])
+	if !settings.Enabled {
+		t.Fatal("rule execution_transform.enabled did not override global false")
+	}
+	if settings.Activation != executionTransformActivationToolSurface {
+		t.Fatalf("Activation = %q, want %q inherited from global", settings.Activation, executionTransformActivationToolSurface)
+	}
+	if settings.ForceTools != executionTransformForceToolsWhenAvailable {
+		t.Fatalf("ForceTools = %q, want %q", settings.ForceTools, executionTransformForceToolsWhenAvailable)
+	}
+	if settings.MaxEnvelopeChars != 512 {
+		t.Fatalf("MaxEnvelopeChars = %d, want 512 inherited from global", settings.MaxEnvelopeChars)
+	}
+	if settings.ExecutionEnvelope != "Execution mode is active. Custom execution envelope for OMP handoff loops." {
+		t.Fatalf("ExecutionEnvelope = %q, want configured envelope", settings.ExecutionEnvelope)
+	}
+	if !stringInList("claude", settings.SourceFormats) {
+		t.Fatalf("SourceFormats = %#v, want anthropic normalized to claude", settings.SourceFormats)
+	}
+}
+
+func TestDecodeConfigRejectsInvalidExecutionTransform(t *testing.T) {
+	_, err := decodeConfig([]byte(`enabled: true
+execution_transform:
+  activation: poetry
+rules:
+  - name: bad
+    models: ["claude-*"]
+    fallback_models: [gpt-5.5]
+`))
+	if err == nil || !strings.Contains(err.Error(), "execution_transform.activation") {
+		t.Fatalf("decodeConfig() error = %v, want activation error", err)
+	}
+
+	_, err = decodeConfig([]byte(`enabled: true
+execution_transform:
+  activation: harness_signal
+rules:
+  - name: bad
+    models: ["claude-*"]
+    fallback_models: [gpt-5.5]
+`))
+	if err == nil || !strings.Contains(err.Error(), "execution_transform.activation") {
+		t.Fatalf("decodeConfig() error = %v, want legacy activation error", err)
+	}
+	_, err = decodeConfig([]byte(`enabled: true
+execution_transform:
+  force_tools: sometimes
+rules:
+  - name: bad
+    models: ["claude-*"]
+    fallback_models: [gpt-5.5]
+`))
+	if err == nil || !strings.Contains(err.Error(), "execution_transform.force_tools") {
+		t.Fatalf("decodeConfig() error = %v, want force_tools error", err)
+	}
+
+	_, err = decodeConfig([]byte(`enabled: true
+execution_transform:
+  exit_tool:
+    name: "bad name"
+rules:
+  - name: bad
+    models: ["claude-*"]
+    fallback_models: [gpt-5.5]
+`))
+	if err == nil || !strings.Contains(err.Error(), "execution_transform.exit_tool.name") {
+		t.Fatalf("decodeConfig() error = %v, want exit tool name error", err)
+	}
+}

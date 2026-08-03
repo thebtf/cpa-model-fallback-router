@@ -30,14 +30,77 @@ func requestBodyForModel(body []byte, model string) []byte {
 	return next
 }
 
+type executionRequestBody struct {
+	Body             []byte
+	EntryProtocol    string
+	ResponseProtocol string
+}
+
 func requestBody(exec pluginapi.ExecutorRequest) []byte {
+	return requestBodyInfo(exec).Body
+}
+
+func requestBodyInfo(exec pluginapi.ExecutorRequest) executionRequestBody {
+	sourceProtocol := normalizeProtocol(executionSourceFormat(exec))
+	formatProtocol := normalizeProtocol(exec.Format)
 	if len(exec.OriginalRequest) > 0 {
-		return bytes.Clone(exec.OriginalRequest)
+		entry := firstNonEmpty(sourceProtocol, inferRequestProtocol(exec.OriginalRequest), formatProtocol, "openai")
+		return executionRequestBody{
+			Body:             bytes.Clone(exec.OriginalRequest),
+			EntryProtocol:    entry,
+			ResponseProtocol: firstNonEmpty(sourceProtocol, entry),
+		}
 	}
 	if len(exec.Payload) > 0 {
-		return bytes.Clone(exec.Payload)
+		entry := firstNonEmpty(formatProtocol, inferRequestProtocol(exec.Payload), sourceProtocol, "openai")
+		return executionRequestBody{
+			Body:             bytes.Clone(exec.Payload),
+			EntryProtocol:    entry,
+			ResponseProtocol: firstNonEmpty(sourceProtocol, entry),
+		}
 	}
-	return nil
+	entry := firstNonEmpty(sourceProtocol, formatProtocol, "openai")
+	return executionRequestBody{
+		EntryProtocol:    entry,
+		ResponseProtocol: firstNonEmpty(sourceProtocol, entry),
+	}
+}
+
+func inferRequestProtocol(body []byte) string {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return ""
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return ""
+	}
+	if _, ok := obj["input"]; ok {
+		return "openai-response"
+	}
+	if _, ok := obj["instructions"]; ok {
+		return "openai-response"
+	}
+	if _, ok := obj["system"]; ok {
+		return "claude"
+	}
+	if tools, ok := obj["tools"].([]any); ok {
+		for _, tool := range tools {
+			toolObj, ok := tool.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, ok := toolObj["input_schema"]; ok {
+				return "claude"
+			}
+			if toolObj["type"] == "function" {
+				return "openai"
+			}
+		}
+	}
+	if _, ok := obj["messages"]; ok {
+		return "openai"
+	}
+	return ""
 }
 
 func cloneHeader(headers http.Header) http.Header {

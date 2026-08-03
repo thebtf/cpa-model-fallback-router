@@ -57,6 +57,24 @@ func TestBuildAttemptPlanSkipsPrimaryDuringCooldown(t *testing.T) {
 	}
 }
 
+func TestBuildAttemptPlanKeepsSameModelRuleDuringCooldown(t *testing.T) {
+	rule := fallbackRule{
+		Name:           "omp_gpt_responses_execution",
+		PrimaryModel:   requestedModelToken,
+		FallbackModels: []string{requestedModelToken},
+	}
+	plan := buildAttemptPlan(rule, "gpt-5.5", true)
+	want := []string{"gpt-5.5"}
+	if plan.Primary != "gpt-5.5" {
+		t.Fatalf("Primary = %q, want gpt-5.5", plan.Primary)
+	}
+	if plan.PrimarySkipped {
+		t.Fatal("PrimarySkipped = true, want false for same-model transform rule")
+	}
+	if len(plan.Attempts) != len(want) || plan.Attempts[0] != want[0] {
+		t.Fatalf("attempts = %#v, want %#v", plan.Attempts, want)
+	}
+}
 func TestMatchingRuleRejectsSourceMismatch(t *testing.T) {
 	cfg, err := decodeConfig([]byte(`enabled: true
 rules:

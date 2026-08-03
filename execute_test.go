@@ -14,7 +14,7 @@ import (
 func TestRunExecutionFallbackMarksPrimaryCooldownOnAuthUnavailable(t *testing.T) {
 	cfg := configureFallbackTest(t, 60)
 	calls := make([]string, 0, 2)
-	executeHostModelAttempt = func(_ pluginapi.ExecutorRequest, _ string, model string, _ []byte) (pluginapi.HostModelExecutionResponse, error) {
+	executeHostModelAttempt = func(_ pluginapi.ExecutorRequest, _ string, model, _, _ string, _ []byte) (pluginapi.HostModelExecutionResponse, error) {
 		calls = append(calls, model)
 		if model == "claude-sonnet-4-5" {
 			return pluginapi.HostModelExecutionResponse{}, errors.New("auth_unavailable: no auth available")
@@ -41,12 +41,41 @@ func TestRunExecutionFallbackMarksPrimaryCooldownOnAuthUnavailable(t *testing.T)
 	}
 }
 
+func TestRunExecutionFallbackUsesFallbackOnContextWindowStatus400(t *testing.T) {
+	configureFallbackTest(t, 60)
+	calls := make([]string, 0, 2)
+	executeHostModelAttempt = func(_ pluginapi.ExecutorRequest, _ string, model, _, _ string, _ []byte) (pluginapi.HostModelExecutionResponse, error) {
+		calls = append(calls, model)
+		if model == "claude-sonnet-4-5" {
+			return pluginapi.HostModelExecutionResponse{
+				StatusCode: http.StatusBadRequest,
+				Body:       []byte(`{"error":{"message":"prompt is too long: 1035602 tokens > 1000000 maximum"}}`),
+			}, nil
+		}
+		return pluginapi.HostModelExecutionResponse{StatusCode: http.StatusOK, Body: []byte(`{"ok":true}`)}, nil
+	}
+
+	body, _, metadata, err := runExecutionFallback(testExecutorRequest(), "callback-1")
+	if err != nil {
+		t.Fatalf("runExecutionFallback() error = %v", err)
+	}
+	if string(body) != `{"ok":true}` {
+		t.Fatalf("body = %s, want ok payload", body)
+	}
+	if !reflect.DeepEqual(calls, []string{"claude-sonnet-4-5", "gpt-5.4"}) {
+		t.Fatalf("calls = %#v, want primary then fallback", calls)
+	}
+	if metadata["fallback_used"] != true {
+		t.Fatalf("fallback_used = %#v, want true", metadata["fallback_used"])
+	}
+}
+
 func TestRunExecutionFallbackSkipsPrimaryDuringCooldown(t *testing.T) {
 	cfg := configureFallbackTest(t, 60)
 	key := fallbackCooldownKey("claude", cfg.Rules[0], "claude-sonnet-4-5")
 	primaryCooldowns.mark(key, time.Minute)
 	calls := make([]string, 0, 1)
-	executeHostModelAttempt = func(_ pluginapi.ExecutorRequest, _ string, model string, _ []byte) (pluginapi.HostModelExecutionResponse, error) {
+	executeHostModelAttempt = func(_ pluginapi.ExecutorRequest, _ string, model, _, _ string, _ []byte) (pluginapi.HostModelExecutionResponse, error) {
 		calls = append(calls, model)
 		if model == "claude-sonnet-4-5" {
 			t.Fatal("primary model was called while cooldown was active")
@@ -104,6 +133,53 @@ func TestRouteModelReturnsExplicitExecutorTarget(t *testing.T) {
 		t.Fatalf("Target = %q, want %q", resp.Target, pluginIdentifier)
 	}
 }
+
+func TestRunExecutionFallbackUsesOrderedFallbackChain(t *testing.T) {
+	configureFallbackTest(t, 60)
+	cfg, err := decodeConfig([]byte(`enabled: true
+rules:
+  - name: kimi_quota_chain
+    models: ["kimi-*"]
+    primary_model: "$requested"
+    fallback_models:
+      - grok-4.5
+      - gpt-5.6-luna
+`))
+	if err != nil {
+		t.Fatalf("decodeConfig() error = %v", err)
+	}
+	currentConfig.Store(cfg)
+
+	calls := make([]string, 0, 3)
+	executeHostModelAttempt = func(_ pluginapi.ExecutorRequest, _ string, model, _, _ string, _ []byte) (pluginapi.HostModelExecutionResponse, error) {
+		calls = append(calls, model)
+		if model != "gpt-5.6-luna" {
+			return pluginapi.HostModelExecutionResponse{StatusCode: http.StatusTooManyRequests}, nil
+		}
+		return pluginapi.HostModelExecutionResponse{StatusCode: http.StatusOK, Body: []byte(`{"ok":true}`)}, nil
+	}
+
+	req := pluginapi.ExecutorRequest{
+		Model:           "kimi-k3",
+		SourceFormat:    "openai",
+		OriginalRequest: []byte(`{"model":"kimi-k3","messages":[]}`),
+	}
+	body, _, metadata, err := runExecutionFallback(req, "callback-1")
+	if err != nil {
+		t.Fatalf("runExecutionFallback() error = %v", err)
+	}
+	if string(body) != `{"ok":true}` {
+		t.Fatalf("body = %s, want ok payload", body)
+	}
+	want := []string{"kimi-k3", "grok-4.5", "gpt-5.6-luna"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls = %#v, want %#v", calls, want)
+	}
+	if metadata["fallback_used"] != true {
+		t.Fatalf("fallback_used = %#v, want true", metadata["fallback_used"])
+	}
+}
+
 func configureFallbackTest(t *testing.T, cooldownSeconds int) pluginConfig {
 	t.Helper()
 	originalExec := executeHostModelAttempt

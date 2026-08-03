@@ -68,7 +68,7 @@ import (
 
 const (
 	pluginIdentifier = "model-fallback-router"
-	pluginVersion    = "0.1.3"
+	pluginVersion    = "0.2.0"
 )
 
 var currentConfig atomic.Value
@@ -221,8 +221,23 @@ func pluginRegistration() registration {
 			GitHubRepository: "https://github.com/thebtf/cpa-model-fallback-router",
 			ConfigFields: []pluginapi.ConfigField{
 				{Name: "enabled", Type: pluginapi.ConfigFieldTypeBoolean, Description: "When false, the router declines every request."},
-				{Name: "rules", Type: pluginapi.ConfigFieldTypeArray, Description: "Ordered fallback rules. Each rule matches source_formats and model patterns."},
+				{Name: "rules", Type: pluginapi.ConfigFieldTypeArray, Description: "First matching rule wins. Each rule tries its primary model, then every fallback model in order after fallback-eligible failures."},
 				{Name: "fallback", Type: pluginapi.ConfigFieldTypeObject, Description: "Global fallback status policy."},
+				{Name: "execution_transform", Type: pluginapi.ConfigFieldTypeObject, Description: "Optional disabled-by-default execution transform for non-native fallback attempts."},
+				{Name: "execution_transform.enabled", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Enable the execution transform globally; rule-level settings can still override it."},
+				{Name: "execution_transform.dry_run", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Emit execution transform telemetry without mutating requests."},
+				{Name: "execution_transform.telemetry", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Emit transform decisions without raw prompts, request bodies, or tool schemas."},
+				{Name: "execution_transform.activation", Type: pluginapi.ConfigFieldTypeEnum, EnumValues: []string{executionTransformActivationToolSurface, executionTransformActivationAlways}, Description: "How to activate the transform after a rule matches; tool_surface uses request tools instead of prompt phrases."},
+				{Name: "execution_transform.force_tools", Type: pluginapi.ConfigFieldTypeEnum, EnumValues: []string{executionTransformForceToolsWhenAvailable, executionTransformForceToolsAlwaysIfSupported, executionTransformForceToolsNever}, Description: "How aggressively to require tool calls on matching execution turns."},
+				{Name: "execution_transform.source_formats", Type: pluginapi.ConfigFieldTypeArray, Description: "Inbound protocol formats eligible for the transform, such as claude or openai-response."},
+				{Name: "execution_transform.requested_model_patterns", Type: pluginapi.ConfigFieldTypeArray, Description: "Requested model patterns eligible for the transform."},
+				{Name: "execution_transform.selected_model_patterns", Type: pluginapi.ConfigFieldTypeArray, Description: "Selected attempt model patterns eligible for the transform."},
+				{Name: "execution_transform.execution_envelope", Type: pluginapi.ConfigFieldTypeString, Description: "Configurable instruction envelope injected into matching execution turns."},
+				{Name: "execution_transform.inject_execution_envelope", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Inject the execution envelope into matching requests."},
+				{Name: "execution_transform.add_audited_exit_tool", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Add the audited ExitContinuationTool to matching tool-capable requests."},
+				{Name: "execution_transform.max_envelope_chars", Type: pluginapi.ConfigFieldTypeInteger, Description: "Maximum size of the injected execution envelope."},
+				{Name: "execution_transform.exit_tool.name", Type: pluginapi.ConfigFieldTypeString, Description: "Name of the audited exit tool added to transformed requests."},
+				{Name: "execution_transform.strict", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Fail the attempt when an eligible request cannot be transformed safely."},
 			},
 		},
 		Capabilities: registrationCapability{

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CPA Model Fallback Router
-  version: 0.1.3
+  version: 0.2.0
   summary: Redoc-rendered configuration reference for the CPA model fallback router plugin.
   description: |
     This document is a configuration reference for a native CLIProxyAPI plugin.
@@ -38,16 +38,36 @@ paths:
                         models: [claude-*]
                         primary_model: "$requested"
                         fallback_models: [gpt-5.4]
+                        execution_transform:
+                          enabled: true
+                          activation: tool_surface
+                          force_tools: when_available
+                          selected_model_patterns: [gpt-*]
+                    execution_transform:
+                      enabled: false
+                      telemetry: true
+                      activation: tool_surface
+                      force_tools: when_available
+                      execution_envelope: "Execution mode is active: execute a real state-changing tool call before prose."
                     fallback:
                       enabled: true
                       cooldown_seconds: 60
                       fallback_on_status: [401, 403, 408, 409, 429, 500, 502, 503, 504]
                       no_fallback_on_status: [400, 404, 422]
+                kimiQuotaChain:
+                  summary: Kimi to Grok, then GPT, on quota failures
+                  value:
+                    enabled: true
+                    rules:
+                      - name: kimi_to_grok_then_luna
+                        models: [kimi-*]
+                        primary_model: "$requested"
+                        fallback_models: [grok-4.5, gpt-5.6-luna]
 components:
   schemas:
     PluginConfig:
       type: object
-      additionalProperties: false
+      description: Runtime decoding tolerates unknown keys for CPA and legacy-config compatibility; copy documented field names exactly.
       required: [enabled, rules]
       properties:
         enabled:
@@ -60,13 +80,15 @@ components:
         rules:
           type: array
           minItems: 1
+          description: First matching rule wins. Put narrow model patterns before broader patterns.
           items:
             $ref: '#/components/schemas/FallbackRule'
         fallback:
           $ref: '#/components/schemas/FallbackPolicy'
+        execution_transform:
+          $ref: '#/components/schemas/ExecutionTransform'
     FallbackRule:
       type: object
-      additionalProperties: false
       required: [name, models, fallback_models]
       properties:
         name:
@@ -77,7 +99,7 @@ components:
           type: array
           items:
             type: string
-            enum: [claude, anthropic, openai, openai-response]
+            enum: [claude, anthropic, openai, openai-response, gemini, codex, antigravity]
           description: Optional inbound protocol filter. `anthropic` is normalized to `claude`.
         models:
           type: array
@@ -96,9 +118,10 @@ components:
           minItems: 1
           items:
             type: string
-          description: Ordered fallback model names to try after fallback-eligible primary failure.
+          description: Ordered model names to try after fallback-eligible failures. Each attempt must be fallback eligible before the next model is tried. Models may target any CPA-supported provider; CPA host execution keeps request/response conversion in the built-in translator pipeline.
           examples:
             - [gpt-5.4]
+            - [grok-4.5, gpt-5.6-luna]
         cooldown_seconds:
           type: integer
           minimum: 0
@@ -117,9 +140,11 @@ components:
             minimum: 100
             maximum: 599
           description: Optional rule-level override for statuses that must not fall back.
+        execution_transform:
+          $ref: '#/components/schemas/ExecutionTransform'
+          description: Optional rule-level override for the execution transform. Omitted fields inherit global execution_transform settings.
     FallbackPolicy:
       type: object
-      additionalProperties: false
       properties:
         enabled:
           type: boolean
@@ -146,3 +171,76 @@ components:
             minimum: 100
             maximum: 599
           description: HTTP statuses that should never trigger fallback.
+    ExecutionTransform:
+      type: object
+      description: Optional agent-harness execution transform for non-native or same-model attempts. Disabled by default.
+      properties:
+        enabled:
+          type: boolean
+          default: false
+          description: Enables execution-mode request transforms for matching attempts.
+        dry_run:
+          type: boolean
+          default: false
+          description: Emits transform metadata without mutating the request body.
+        telemetry:
+          type: boolean
+          default: true
+          description: Emits decision metadata without raw prompts, tool schemas, or request bodies.
+        activation:
+          type: string
+          enum: [tool_surface, always]
+          default: tool_surface
+          description: Controls how a matched rule activates the transform. `tool_surface` uses protocol shape plus available tools instead of prompt phrases; `always` applies to every matched request.
+        force_tools:
+          type: string
+          enum: [never, when_available, always_if_supported]
+          default: when_available
+          description: Controls whether supported protocol shapes receive required tool-choice settings.
+        execution_envelope:
+          type: string
+          description: Optional custom instruction envelope injected into matching execution turns. Defaults to the built-in action-first envelope.
+        inject_execution_envelope:
+          type: boolean
+          default: true
+          description: Adds the configured instruction envelope telling GPT fallback attempts to act as an execution turn.
+        add_audited_exit_tool:
+          type: boolean
+          default: true
+          description: Adds an audited exit tool when tools are available or force_tools permits adding tools.
+        max_envelope_chars:
+          type: integer
+          default: 1600
+          description: Maximum envelope length. Use 0 to disable truncation; otherwise values must be 256-8000.
+        source_formats:
+          type: array
+          default: [claude]
+          items:
+            type: string
+          description: Inbound source formats allowed for transform detection. `anthropic` is normalized to `claude`.
+        requested_model_patterns:
+          type: array
+          default: [claude-*]
+          items:
+            type: string
+          description: Requested model patterns allowed for transform detection.
+        selected_model_patterns:
+          type: array
+          default: [gpt-*]
+          items:
+            type: string
+          description: Selected attempt model patterns allowed for transform detection.
+        exit_tool:
+          $ref: '#/components/schemas/AuditedExitToolSettings'
+        strict:
+          type: boolean
+          default: false
+          description: Fails before host execution when a candidate transform cannot be applied safely.
+    AuditedExitToolSettings:
+      type: object
+      properties:
+        name:
+          type: string
+          default: ExitContinuationTool
+          pattern: '^[A-Za-z_][A-Za-z0-9_]*$'
+          description: Tool name used for structured audited exits from tool-required mode.
