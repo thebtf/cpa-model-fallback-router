@@ -9,15 +9,16 @@
     }
   ],
   "position": [
-    "The operator authorized releasing the current execution-transform version after docs, README, and plugin metadata are refreshed.",
-    "The intended Kimi chain is requested model -> grok-4.5 -> gpt-5.6-luna; the focused executor regression passes.",
-    "Run nvmd state and live git before trusting this checkpoint; do not write production CPA config."
+    "The v0.2.0 implementation, public docs, and version metadata are committed at 8c61539; run nvmd state and live git for derived status.",
+    "The Kimi chain is requested model -> grok-4.5 -> gpt-5.6-luna and has a focused executor regression.",
+    "The independent child-review lane is suspended after two provenance failures; material findings were verified against files, the pinned CPA SDK, and tests.",
+    "Do not write production CPA config."
   ],
   "suspended": [],
-  "next_action": "Update v0.2.0 public docs and version metadata, run release gates, commit, tag, push, and verify GitHub release assets.",
+  "next_action": "Build and live-load the committed v0.2.0 candidate from a clean worktree, then push main, create and push annotated tag v0.2.0, and verify GitHub release assets and checksums.",
   "note": null,
-  "rev": 3,
-  "updated_at": "2026-08-02T23:47:27.583Z",
+  "rev": 4,
+  "updated_at": "2026-08-03T00:34:29.495Z",
   "updated_by": {
     "consumer": "codex",
     "session_id": "019f1079-6101-7c62-9298-44c375b97e45",
